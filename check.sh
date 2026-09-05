@@ -42,12 +42,21 @@ shellcheck "${scripts[@]}"
 shfmt -d -i 2 -ci "${scripts[@]}"
 
 echo "== the workflows are valid, and their tools come from the lock rather than a registry"
-actionlint
-# This repo follows its own advice about pinning: a job that resolves a tool at run time
-# changes behaviour with zero change in the repository. The guard is here as well as in the
-# workflow, so it also fails locally rather than only after a push.
-if grep -rEn 'nix (run|shell) nixpkgs#|npx +[a-z@.-]|pip +install |go +install .*@latest' .github/workflows; then
-  fail "an unpinned registry lookup in a workflow — pin the tool in the flake's dev shell and use nix develop"
+# actionlint needs a git project to find workflows in, which the throwaway copies below are
+# not. Skipping it there is what lets a planted defect be the reason a copy fails; without
+# this the copies would all die here, and every "able to fail" proof would be vacuous while
+# the gate stayed green. Outside a nested run the workflows must exist.
+if [[ -n "${T_CHECK_NESTED:-}" ]]; then
+  echo "   skipped in the nested copy, which carries no workflows"
+else
+  [[ -d .github/workflows ]] || fail ".github/workflows is missing — nothing gates this repository"
+  actionlint
+  # This repo follows its own advice about pinning: a job that resolves a tool at run time
+  # changes behaviour with zero change in the repository. The guard is here as well as in
+  # the workflow, so it also fails locally rather than only after a push.
+  if grep -rEn 'nix (run|shell) nixpkgs#|npx +[a-z@.-]|pip +install |go +install .*@latest' .github/workflows; then
+    fail "an unpinned registry lookup in a workflow — pin the tool in the flake's dev shell and use nix develop"
+  fi
 fi
 
 echo "== SKILL.md carries the frontmatter an agent loads it by"
@@ -185,6 +194,13 @@ policy 'pattern thread panicked in setup'
 in_conf 3 "a pattern named in the config applies" -- sh -c 'echo "thread panicked in setup"; exit 0'
 policy 'allow expected: no tests ran'
 in_conf 0 "a line the config excuses is excused" -- sh -c 'echo "expected: no tests ran"; exit 0'
+# flaky obeys the same policy: a repository that named its log directory once should not
+# find one subcommand writing somewhere else
+policy 'logdir .from-config'
+rm -rf "$conf/.from-config"
+(cd "$conf" && "$HERE/t.sh" flaky 2 -- sh -c 'echo "1 passed"; exit 0') >/dev/null 2>&1 || :
+[[ -d "$conf/.from-config" ]] || fail "flaky ignored the log directory the config names"
+rm -rf "$conf/.from-config"
 policy 'command cargo test'
 in_conf 2 "an unknown key refuses rather than reading as no policy" -- true
 policy 'markers'
@@ -444,60 +460,89 @@ done
 if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy() {
     local dest="$1"
+    # Everything the docs link to has to come along, or a copy fails on a dead link rather
+    # than on the defect it was built to carry
     mkdir -p "$dest/tests/fixtures/lying" "$dest/templates"
-    cp t.sh check.sh SKILL.md README.md "$dest/"
+    cp t.sh check.sh SKILL.md README.md CHANGELOG.md LICENSE "$dest/"
     cp -r references markers "$dest/"
-    cp templates/defects.sh "$dest/templates/"
+    cp templates/defects.sh templates/t.conf "$dest/templates/"
     cp tests/fixtures/*.log "$dest/tests/fixtures/"
     cp tests/fixtures/lying/*.log "$dest/tests/fixtures/lying/"
   }
   nested() { (cd "$1" && T_CHECK_NESTED=1 ./check.sh >/dev/null 2>&1); }
 
+  # A planted defect must make the copy fail FOR ITS OWN REASON. Asserting only that the
+  # copy failed lets one broken check take credit for another's proof — which is how the
+  # duplicate-marker rule sat here unproven, its copy failing on the dead-entry rule
+  # instead.
+  catches() { # catches DIR EXPECTED-FRAGMENT DESCRIPTION
+    local dir="$1" want="$2" what="$3" out
+    out=$( (cd "$dir" && T_CHECK_NESTED=1 ./check.sh 2>&1) || :)
+    local line
+    line=$(grep -m 1 '^check:' <<<"$out" || :)
+    [[ -n "$line" ]] || fail "$what: the copy did not fail at all"
+    [[ "$line" == *"$want"* ]] ||
+      fail "$what: the copy failed for another reason — $line"
+  }
+
+  echo "== an untouched copy passes, so a copy that fails below fails for its defect"
+  # The question every falsification rests on and the one easiest to forget: if a pristine
+  # copy already fails, then "the broken copy failed" says nothing, and every proof below is
+  # vacuous while the gate stays green. This repository shipped exactly that bug for four
+  # commits, after a step was added that a copy could not satisfy.
+  copy "$work/pristine"
+  nested "$work/pristine" ||
+    fail "an untouched copy does not pass the gate — every 'able to fail' proof below would be meaningless"
+
   echo "== the frontmatter check is able to fail"
   copy "$work/nofront"
   printf 'no frontmatter here\n' >"$work/nofront/SKILL.md"
-  ! nested "$work/nofront" || fail "a SKILL.md with no frontmatter passed the gate — nothing would load it"
+  catches "$work/nofront" "does not open with a frontmatter block" "a SKILL.md with no frontmatter"
 
   echo "== the hard-wrap check is able to fail"
   copy "$work/wrapped"
   printf '\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n' \
     >>"$work/wrapped/README.md"
-  ! nested "$work/wrapped" || fail "a hard-wrapped paragraph passed the gate"
+  catches "$work/wrapped" "hard-wraps a paragraph" "a hard-wrapped paragraph"
 
   echo "== the reachability check is able to fail: a reference nothing links to"
   copy "$work/orphan"
   : >"$work/orphan/references/nothing-points-here.md"
-  ! nested "$work/orphan" || fail "a reference nothing links to passed the gate"
+  catches "$work/orphan" "nothing links to it" "a reference nothing links to"
 
   echo "== the link check is able to fail: a link to a file that is not there"
   copy "$work/deadlink"
   printf '\nSee [the missing one](references/not-a-file.md).\n' >>"$work/deadlink/SKILL.md"
-  ! nested "$work/deadlink" || fail "a link to a missing file passed the gate"
+  catches "$work/deadlink" "which does not exist" "a link to a missing file"
 
   echo "== the anchor check is able to fail: a link to a heading that does not exist"
   copy "$work/deadanchor"
   printf '\nSee [nowhere](references/verdict.md#no-such-heading).\n' >>"$work/deadanchor/SKILL.md"
-  ! nested "$work/deadanchor" || fail "a link to a nonexistent heading passed the gate"
+  catches "$work/deadanchor" "where no heading has that anchor" "a link to a nonexistent heading"
 
   echo "== the marker check is able to fail: a dead entry"
   copy "$work/dead"
   printf 'a marker matching nothing\n' >>"$work/dead/markers/default.txt"
-  ! nested "$work/dead" || fail "a marker matching nothing passed the gate — the marker check catches nothing"
+  catches "$work/dead" "a dead entry guards nothing" "a marker matching nothing"
 
   echo "== the marker check is able to fail: an entry that fires on a healthy run"
   copy "$work/noisy"
   printf 'test session starts\n' >>"$work/noisy/markers/default.txt"
-  ! nested "$work/noisy" || fail "a marker that fires on the clean fixture passed the gate"
+  catches "$work/noisy" "it would redden healthy runs" "a marker that fires on a healthy run"
 
   echo "== the duplicate check is able to fail: a set repeating a default marker"
+  # The duplicate has to be present in the set's own fixture too, or the copy fails on the
+  # dead-entry rule first and the duplicate rule is never reached — which is exactly how
+  # this proof was passing without proving anything
   copy "$work/dupe"
   printf 'no tests ran\n' >>"$work/dupe/markers/go.txt"
-  ! nested "$work/dupe" || fail "a set repeating a default marker passed the gate — the copy adds nothing"
+  printf 'no tests ran in 0.01s\n' >>"$work/dupe/tests/fixtures/lying/go.log"
+  catches "$work/dupe" "repeats markers that markers/default.txt" "a set repeating a default marker"
 
   echo "== the marker check is able to fail: a set with no fixture behind it"
   copy "$work/unproven"
   printf 'no tests ran\n' >"$work/unproven/markers/invented.txt"
-  ! nested "$work/unproven" || fail "a marker set with no fixture passed the gate — its entries are unproven"
+  catches "$work/unproven" "has no fixture at" "a marker set with no fixture"
 
   echo "== the unknown-key refusal is able to fail: a config that ignores what it cannot parse"
   # The tempting form. An ignored key is a policy silently not in effect, which is worse
@@ -508,7 +553,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
     mv "$work/lenient/t.sh.new" "$work/lenient/t.sh"
   chmod +x "$work/lenient/t.sh"
   grep -qF '*) : ;;' "$work/lenient/t.sh" || fail "the lenient-config fixture was not planted"
-  ! nested "$work/lenient" || fail "a config that ignores an unknown key passed the gate"
+  catches "$work/lenient" "unknown key" "a config that ignores an unknown key"
 
   echo "== a refusal written inside a subshell is able to fail"
   # `die` in a $(...) exits the subshell, so the caller carries on with an empty string.
@@ -519,7 +564,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
     mv "$work/subshell/t.sh.new" "$work/subshell/t.sh"
   chmod +x "$work/subshell/t.sh"
   grep -qF 'MARKER_PATTERNS=()' "$work/subshell/t.sh" || fail "the unvalidated-markers fixture was not planted"
-  ! nested "$work/subshell" || fail "a run that never validated its markers passed the gate"
+  catches "$work/subshell" "accepted an empty marker set" "a run that never validated its markers"
 
   echo "== the status check is able to fail: run reading the pipeline instead of the command"
   # The regression as it actually occurs: a harness with no pipefail that reads $? after
@@ -532,7 +577,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
     t.sh >"$work/blind/t.sh.new" && mv "$work/blind/t.sh.new" "$work/blind/t.sh"
   chmod +x "$work/blind/t.sh"
   grep -qF 'local status=$?' "$work/blind/t.sh" || fail "the blind-status fixture was not planted"
-  ! nested "$work/blind" || fail "a run reading tee's status passed the gate — the whole premise is unguarded"
+  catches "$work/blind" "for a command that exited 7" "a run reading tee's status"
 
   echo "== the help-drift check is able to fail: a subcommand the help never mentions"
   copy "$work/undocumented"
@@ -540,7 +585,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
     t.sh >"$work/undocumented/t.sh.new" && mv "$work/undocumented/t.sh.new" "$work/undocumented/t.sh"
   chmod +x "$work/undocumented/t.sh"
   grep -qF 'wat) cmd_run' "$work/undocumented/t.sh" || fail "the undocumented-subcommand fixture was not planted"
-  ! nested "$work/undocumented" || fail "a subcommand missing from the help passed the gate"
+  catches "$work/undocumented" "its help never mentions it" "a subcommand missing from the help"
 
   echo "== the bisect status mapping is able to fail: statuses passed through raw"
   copy "$work/raw"
@@ -550,7 +595,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/raw/t.sh"
   # shellcheck disable=SC2016  # $status is t.sh's own source text, not an expansion here
   grep -qF 'return "$status" ;;' "$work/raw/t.sh" || fail "the raw-status fixture was not planted"
-  ! nested "$work/raw" || fail "a probe returning 139 to git bisect passed the gate — a crash would abort the session"
+  catches "$work/raw" "should be 1 to git bisect" "a probe returning a raw signal status"
 
   echo "== the restore check is able to fail: a slurp that loses the trailing newline"
   # The regression this exact guard was written for. Dropping the `printf x` lets command
@@ -563,7 +608,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/trailing/t.sh"
   # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
   grep -qF '__content=$(cat "$2")' "$work/trailing/t.sh" || fail "the trailing-newline fixture was not planted"
-  ! nested "$work/trailing" || fail "a falsify that leaves the source one byte different passed the gate"
+  catches "$work/trailing" "byte for byte" "a falsify that loses the trailing newline"
 
   echo "== the log-is-writable guard is able to fail"
   copy "$work/nolog"
@@ -572,7 +617,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   grep -vF "$guard" t.sh >"$work/nolog/t.sh.new" && mv "$work/nolog/t.sh.new" "$work/nolog/t.sh"
   chmod +x "$work/nolog/t.sh"
   ! grep -qF "$guard" "$work/nolog/t.sh" || fail "the missing-guard fixture was not planted"
-  ! nested "$work/nolog" || fail "a run that cannot write its log passed the gate"
+  catches "$work/nolog" "nowhere to put its log" "a run that cannot write its log"
 fi
 
 echo

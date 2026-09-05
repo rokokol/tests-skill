@@ -276,7 +276,11 @@ cmd_flaky() {
   ((n >= 2)) || die "flaky: $n runs cannot show disagreement; use 2 or more"
   shift
 
-  local logdir="${T_LOGDIR:-.test-logs}"
+  # The same policy `run` obeys: a repository that named its log directory once should not
+  # find flaky writing somewhere else
+  POLICY_LOGDIR=""
+  load_config
+  local logdir="${T_LOGDIR:-${POLICY_LOGDIR:-.test-logs}}"
   local -a pass=()
   while (($#)); do
     case "$1" in

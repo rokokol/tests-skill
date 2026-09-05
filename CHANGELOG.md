@@ -6,6 +6,19 @@ version to bump
 
 ## Unreleased
 
+### Fixed
+
+- **the "able to fail" proofs had stopped proving anything.** Adding the `actionlint` step
+  made every throwaway copy die there, before it ever reached its planted defect — so each
+  `! nested` assertion held for the wrong reason, and the gate stayed green while sixteen
+  falsifications were vacuous. Two guards now make that unrepeatable: an untouched copy
+  must pass before any defect is planted, and each planted defect must produce **its own**
+  failure message rather than merely some failure. The second guard immediately found the
+  duplicate-marker rule unproven as well — its copy was failing on the dead-entry rule
+  first, so the rule it was written for had never run
+- `flaky` ignored the `logdir` its repository names in `tests/t.conf`, writing where `run`
+  would not. It reads the same policy now
+
 ### Changed
 
 - the markers of a lying run moved out of `t.sh` into `markers/*.txt`, so the list grows as
