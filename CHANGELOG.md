@@ -9,6 +9,14 @@ section for work that has landed but not shipped would never close
 
 ### Fixed
 
+- **a marker file checked out with CRLF reported every healthy run as a lie.** A blank
+  line became a marker of one carriage return, `grep -F` found that on every line of a
+  CRLF log, and a passing `cargo test` was reported as `LIED` with a build line offered as
+  the evidence. The trailing CR is stripped when reading marker files and `tests/t.conf`
+  now, and a CRLF fixture holds it. Found on a Windows runner by somebody using the skill,
+  where git's autocrlf converts on checkout — the worst shape a marker bug can take, since
+  a check that reddens good runs is a check that gets switched off
+
 - **the "able to fail" proofs had stopped proving anything.** Adding the `actionlint` step
   made every throwaway copy die there, before it ever reached its planted defect — so each
   `! nested` assertion held for the wrong reason, and the gate stayed green while sixteen

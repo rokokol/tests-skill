@@ -248,6 +248,23 @@ T_CONFIG=templates/t.conf ./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo "47 pas
   >/dev/null 2>&1 || status=$?
 ((status == 0)) || fail "templates/t.conf is not a config t.sh accepts (got $status)"
 
+echo "== a marker file checked out with CRLF does not turn every line into a finding"
+# Reported from a Windows runner, where git's autocrlf converts on checkout: a blank line
+# becomes a marker of one carriage return, `grep -F` finds that on every line of a CRLF
+# log, and a healthy `cargo test` is reported as a lie with a build line as the evidence.
+# The worst shape a marker bug can take — it reddens good runs, so it gets switched off.
+crlf_markers="$work/crlf-markers.txt"
+printf '# a comment\r\n\r\nno tests ran\r\ncollected 0 items\r\n' >"$crlf_markers"
+status=0
+./t.sh run -t 0 -l "$work/logs" -m "$crlf_markers" \
+  -- sh -c 'printf "Compiling windows-link v0.2.1\r\ntest result: ok. 12 passed\r\n"; exit 0' \
+  >/dev/null 2>&1 || status=$?
+((status == 0)) || fail "a CRLF marker file reddened a healthy CRLF run (got $status)"
+status=0
+./t.sh run -t 0 -l "$work/logs" -m "$crlf_markers" \
+  -- sh -c 'printf "collected 0 items\r\n"; exit 0' >/dev/null 2>&1 || status=$?
+((status == 3)) || fail "a CRLF marker file stopped catching what it names (got $status)"
+
 echo "== run reports the command's own status, where a pipe would report zero"
 # The whole reason this harness exists: `cmd | tail` exits 0 for a suite that just failed
 status=0
@@ -551,6 +568,14 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy "$work/deadanchor"
   printf '\nSee [nowhere](references/verdict.md#no-such-heading).\n' >>"$work/deadanchor/SKILL.md"
   catches "$work/deadanchor" "where no heading has that anchor" "a link to a nonexistent heading"
+
+  echo "== the CRLF guard is able to fail"
+  copy "$work/crlf"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed "s|^    line=\"\${line%\$'\\\\r'}\"$||" t.sh >"$work/crlf/t.sh.new" &&
+    mv "$work/crlf/t.sh.new" "$work/crlf/t.sh"
+  chmod +x "$work/crlf/t.sh"
+  catches "$work/crlf" "reddened a healthy CRLF run" "a run that keeps the carriage return in its markers"
 
   echo "== the documented-flag check is able to fail: the mistake a reader actually hit"
   copy "$work/badflag"

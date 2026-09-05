@@ -67,10 +67,17 @@ resolve_markers() {
   RESOLVED="$name"
 }
 
-# Blank lines and # comments out; everything else verbatim, spaces included
+# Blank lines and # comments out; everything else verbatim, spaces included.
+#
+# The trailing CR is stripped first, and that is not cosmetic: a file checked out with
+# CRLF turns every blank line into a marker of a single carriage return, which `grep -F`
+# then finds on every line of a CRLF log — so a healthy run is reported as a lie, with a
+# random build line offered as the evidence. Found on a Windows runner, where git's
+# autocrlf does the conversion on checkout.
 read_markers() {
   local file="$1" line
   while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
     printf '%s\n' "$line"
   done <"$file"
@@ -100,6 +107,9 @@ load_config() {
   local line key value n=0 sets=0 pats=0
   while IFS= read -r line || [[ -n "$line" ]]; do
     n=$((n + 1))
+    # Same CRLF stripping as read_markers, for the same reason: a config checked out with
+    # CRLF would otherwise carry a carriage return into every value
+    line="${line%$'\r'}"
     [[ -z "${line//[[:space:]]/}" || "$line" == \#* ]] && continue
     key=${line%%[[:space:]]*}
     value=${line#"$key"}
