@@ -99,7 +99,10 @@ load_config() {
   if [[ ! -e "$conf" ]]; then
     # A repository with no config is the normal case; only a config that exists and cannot
     # be used is an error
-    [[ "${T_CONFIG-}" == "" || ! -v T_CONFIG ]] || die "config: $conf does not exist"
+    # `-z "${T_CONFIG-}"` rather than `-v T_CONFIG`: the second is bash 4.2+, and macOS
+    # ships 3.2. It is also the same test — an unset T_CONFIG expands to the empty string
+    # here, and an empty one returned above.
+    [[ -z "${T_CONFIG-}" ]] || die "config: $conf does not exist"
     return 0
   fi
   [[ -r "$conf" ]] || die "config: $conf exists but cannot be read"
@@ -529,22 +532,38 @@ cmd_falsify() {
   for f in "${DEF_FILE[@]}"; do
     [[ " ${files[*]-} " == *" $f "* ]] || files+=("$f")
   done
-  local -A original=()
+  # Two parallel arrays rather than one associative array: `declare -A` is bash 4.0+, and
+  # macOS ships 3.2. `files` holds at most a handful of paths, so a linear lookup costs
+  # nothing and the harness stays runnable wherever bash is.
+  local -a originals=()
   local __slurped=""
   for f in "${files[@]}"; do
     [[ -r "$f" ]] || die "falsify: $defects names $f, which cannot be read"
     slurp __slurped "$f" || die "falsify: cannot read $f"
-    original["$f"]="$__slurped"
+    originals+=("$__slurped")
   done
+
+  # Assigns to the variable NAMED by $1, for the same reason slurp does: a value fetched
+  # through $(...) loses its trailing newlines, and a `die` inside one would exit only the
+  # subshell — here that would mean silently restoring a file to nothing.
+  original_of() { # original_of VARNAME FILE
+    local wanted="$2" i
+    for i in "${!files[@]}"; do
+      [[ "${files[$i]}" == "$wanted" ]] || continue
+      printf -v "$1" '%s' "${originals[$i]}"
+      return 0
+    done
+    die "falsify: $wanted has no recorded original — the defect list and the file list disagree"
+  }
 
   # Restoration happens here and not only at the end of the loop, so an interrupt, a
   # failure or a kill cannot leave the source edited. The contents come from memory rather
   # than from git, so this needs neither a clean checkout nor git to be working.
   # shellcheck disable=SC2317  # reached through the trap, which shellcheck does not follow
   restore_all() {
-    local file
-    for file in "${files[@]}"; do
-      printf '%s' "${original[$file]}" >"$file" 2>/dev/null || :
+    local i
+    for i in "${!files[@]}"; do
+      printf '%s' "${originals[$i]}" >"${files[$i]}" 2>/dev/null || :
     done
   }
   trap 'restore_all' EXIT INT TERM
@@ -575,7 +594,7 @@ cmd_falsify() {
     unusable) die "falsify: the suite did not really run before any edit — check the build command and the log" ;;
   esac
 
-  local i name file find replace why verdict content mutated occurrences
+  local i name file find replace why verdict content mutated occurrences pristine
   local -a survived=() ran=()
   for i in "${!DEF_NAME[@]}"; do
     name="${DEF_NAME[$i]}"
@@ -586,7 +605,7 @@ cmd_falsify() {
     why="${DEF_WHY[$i]}"
     ran+=("$name")
 
-    content="${original[$file]}"
+    original_of content "$file"
     occurrences=$(count_occurrences "$content" "$find")
     if ((occurrences != 1)); then
       # Not guessed at: a list that no longer describes the code has to say so, or it
@@ -620,7 +639,8 @@ cmd_falsify() {
   trap - EXIT INT TERM
   for f in "${files[@]}"; do
     slurp __slurped "$f" || die "falsify: cannot re-read $f to confirm it was restored"
-    [[ "$__slurped" == "${original[$f]}" ]] ||
+    original_of pristine "$f"
+    [[ "$__slurped" == "$pristine" ]] ||
       die "falsify: $f was not restored to what it was — restore it from git before doing anything else"
   done
 

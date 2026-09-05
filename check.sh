@@ -41,6 +41,28 @@ for s in "${scripts[@]}"; do bash -n "$s"; done
 shellcheck "${scripts[@]}"
 shfmt -d -i 2 -ci "${scripts[@]}"
 
+echo "== nothing here needs a bash newer than the one macOS ships"
+# t.sh is meant to be vendored into other repositories, and some of them run CI on macOS,
+# which ships bash 3.2. Two of these were found the expensive way, on a runner none of this
+# was written on: `[[ -v VAR ]]` is 4.2+, `mapfile` is 4.0+, `declare -A` is 4.0+.
+# `sort -V` is a neighbouring trap — not a bash version but a GNU one, absent from BSD sort.
+#
+# Every literal is split by a bracket expression so the pattern cannot match its own source
+# line, and the planted constructs live in a fixture for the same reason: a guard that
+# reddens the commit introducing it gets deleted rather than fixed.
+bash4_pattern='\[\[[^]]*[-]v [A-Za-z_]|mapfil[e] |readarra[y] |declar[e] -A|loca[l] -A|\$\{[A-Za-z_]+,[,]\}|\$\{[A-Za-z_]+\^[\^]\}|sor[t] -[A-Za-z]*V'
+bash4=$(grep -nE "$bash4_pattern" "${scripts[@]}" | grep -vE ':[[:space:]]*#' || :)
+[[ -z "$bash4" ]] || fail "a construct newer than bash 3.2 (or GNU-only) in a script meant to travel:"$'\n'"$bash4"
+planted_count=0
+while IFS= read -r planted; do
+  [[ -z "$planted" || "$planted" == \#* ]] && continue
+  planted_count=$((planted_count + 1))
+  printf '%s\n' "$planted" >"$work/planted.sh"
+  grep -qE "$bash4_pattern" "$work/planted.sh" ||
+    fail "the bash-3.2 guard does not catch: $planted"
+done <tests/fixtures/bash4-constructs.sh
+((planted_count >= 8)) || fail "only $planted_count constructs were read from the fixture — the extractor is broken"
+
 echo "== the workflows are valid, and their tools come from the lock rather than a registry"
 # actionlint needs a git project to find workflows in, which the throwaway copies below are
 # not. Skipping it there is what lets a planted defect be the reason a copy fails; without
@@ -517,6 +539,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
     cp templates/defects.sh templates/t.conf "$dest/templates/"
     cp tests/fixtures/*.log "$dest/tests/fixtures/"
     cp tests/fixtures/lying/*.log "$dest/tests/fixtures/lying/"
+    cp tests/fixtures/bash4-constructs.sh "$dest/tests/fixtures/"
   }
   nested() { (cd "$1" && T_CHECK_NESTED=1 ./check.sh >/dev/null 2>&1); }
 

@@ -9,6 +9,15 @@ section for work that has landed but not shipped would never close
 
 ### Fixed
 
+- **the harness needed a bash newer than the one macOS ships.** `[[ -v VAR ]]` is bash
+  4.2+ and broke `run` outright on a macOS runner; `declare -A` in `falsify` is 4.0+ and
+  would have broken it next. Both are gone — the first was a redundant clause, the second
+  became two parallel arrays, which for a handful of paths costs nothing. Reported from a
+  CI run on a machine none of this was written on, which is the only place it could have
+  been found. A guard now greps every shipped script for constructs a bash 3.2 or a BSD
+  userland does not have, with each literal split so the pattern cannot match its own
+  source, and the planted constructs kept in a fixture for the same reason
+
 - **a marker file checked out with CRLF reported every healthy run as a lie.** A blank
   line became a marker of one carriage return, `grep -F` found that on every line of a
   CRLF log, and a passing `cargo test` was reported as `LIED` with a build line offered as
