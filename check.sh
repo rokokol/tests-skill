@@ -96,22 +96,46 @@ for doc in "${docs[@]}"; do
   done < <(grep -o '](\([^)]*\))' "$doc" | sed 's/^](//; s/)$//' | grep -v '^[a-z]*://')
 done
 
-echo "== every lie marker catches its fixture, and none of them cries on a healthy run"
-# The markers are read OUT of t.sh rather than spelled a second time here: two copies of
-# a list disagree within a month, and then the gate is testing the copy.
-markers=()
-while IFS= read -r m; do markers+=("$m"); done < <(
-  sed -n '/^# >>> LIE MARKERS/,/^# <<< LIE MARKERS/p' t.sh |
-    sed -n "s/^  '\(.*\)'\$/\1/p"
-)
-# An extractor that finds nothing must say so rather than read as "all clear"
-((${#markers[@]} > 0)) || fail "no markers could be read out of t.sh — the extractor is broken"
-for m in "${markers[@]}"; do
-  grep -qiF -- "$m" tests/fixtures/lying.log ||
-    fail "the marker '$m' matches nothing in tests/fixtures/lying.log — a dead entry guards nothing"
-  ! grep -qiF -- "$m" tests/fixtures/clean.log ||
-    fail "the marker '$m' fires on tests/fixtures/clean.log — it would redden healthy runs"
+echo "== every marker catches its own fixture, and no default one cries on a healthy run"
+# Read from the same files `t.sh run` reads, never from a second copy of the list: two
+# copies disagree within a month, and then the gate is testing the copy.
+#
+# Both halves of the rule apply to markers/default.txt. Only the first applies to the
+# per-ecosystem sets: they exist precisely because some of their lines DO appear in healthy
+# runs (`[no test files]` in a Go workspace), which is why they are opted into rather than
+# on by default.
+set_count=0
+for set_file in markers/*.txt; do
+  name=$(basename "$set_file" .txt)
+  fixture="tests/fixtures/lying/$name.log"
+  [[ -r "$fixture" ]] || fail "$set_file has no fixture at $fixture — its entries are unproven"
+  markers=()
+  while IFS= read -r m; do
+    [[ -z "$m" || "$m" == \#* ]] && continue
+    markers+=("$m")
+  done <"$set_file"
+  # An extractor that finds nothing must say so rather than read as "all clear"
+  ((${#markers[@]} > 0)) || fail "$set_file holds no markers — an empty set checks nothing"
+  for m in "${markers[@]}"; do
+    grep -qiF -- "$m" "$fixture" ||
+      fail "the marker '$m' matches nothing in $fixture — a dead entry guards nothing"
+    if [[ "$name" == default ]]; then
+      ! grep -qiF -- "$m" tests/fixtures/clean.log ||
+        fail "the default marker '$m' fires on tests/fixtures/clean.log — it would redden healthy runs"
+    fi
+  done
+  set_count=$((set_count + 1))
 done
+((set_count > 0)) || fail "no marker sets were found in markers/ — the glob is broken"
+
+echo "== run refuses a marker set that would leave it checking nothing"
+status=0
+./t.sh run -t 0 -l "$work/logs" -m no-such-set -- true >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "run accepted a marker set that does not exist (got $status)"
+: >"$work/empty-markers.txt"
+status=0
+./t.sh run -t 0 -l "$work/logs" -m "$work/empty-markers.txt" -- true >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "run accepted an empty marker set, which reads as a working check (got $status)"
 
 echo "== run reports the command's own status, where a pipe would report zero"
 # The whole reason this harness exists: `cmd | tail` exits 0 for a suite that just failed
@@ -357,11 +381,12 @@ done
 if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy() {
     local dest="$1"
-    mkdir -p "$dest/tests/fixtures" "$dest/templates"
+    mkdir -p "$dest/tests/fixtures/lying" "$dest/templates"
     cp t.sh check.sh SKILL.md README.md "$dest/"
-    cp -r references "$dest/"
+    cp -r references markers "$dest/"
     cp templates/defects.sh "$dest/templates/"
     cp tests/fixtures/*.log "$dest/tests/fixtures/"
+    cp tests/fixtures/lying/*.log "$dest/tests/fixtures/lying/"
   }
   nested() { (cd "$1" && T_CHECK_NESTED=1 ./check.sh >/dev/null 2>&1); }
 
@@ -387,18 +412,29 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
 
   echo "== the marker check is able to fail: a dead entry"
   copy "$work/dead"
-  awk '/^# <<< LIE MARKERS/ && !done { print "  '\''a marker matching nothing'\''"; done=1 } { print }' \
-    t.sh >"$work/dead/t.sh.new" && mv "$work/dead/t.sh.new" "$work/dead/t.sh"
-  chmod +x "$work/dead/t.sh"
-  grep -qF 'a marker matching nothing' "$work/dead/t.sh" || fail "the dead-entry fixture was not planted"
+  printf 'a marker matching nothing\n' >>"$work/dead/markers/default.txt"
   ! nested "$work/dead" || fail "a marker matching nothing passed the gate — the marker check catches nothing"
 
   echo "== the marker check is able to fail: an entry that fires on a healthy run"
   copy "$work/noisy"
-  awk '/^# <<< LIE MARKERS/ && !done { print "  '\''test session starts'\''"; done=1 } { print }' \
-    t.sh >"$work/noisy/t.sh.new" && mv "$work/noisy/t.sh.new" "$work/noisy/t.sh"
-  chmod +x "$work/noisy/t.sh"
+  printf 'test session starts\n' >>"$work/noisy/markers/default.txt"
   ! nested "$work/noisy" || fail "a marker that fires on the clean fixture passed the gate"
+
+  echo "== the marker check is able to fail: a set with no fixture behind it"
+  copy "$work/unproven"
+  printf 'no tests ran\n' >"$work/unproven/markers/invented.txt"
+  ! nested "$work/unproven" || fail "a marker set with no fixture passed the gate — its entries are unproven"
+
+  echo "== a refusal written inside a subshell is able to fail"
+  # `die` in a $(...) exits the subshell, so the caller carries on with an empty string.
+  # Written that way, the empty-marker-set refusal would not refuse — and an empty marker
+  # list makes every run a pass while the check still looks like it is working.
+  copy "$work/subshell"
+  sed 's/^  load_markers$/  MARKER_PATTERNS=()/' t.sh >"$work/subshell/t.sh.new" &&
+    mv "$work/subshell/t.sh.new" "$work/subshell/t.sh"
+  chmod +x "$work/subshell/t.sh"
+  grep -qF 'MARKER_PATTERNS=()' "$work/subshell/t.sh" || fail "the unvalidated-markers fixture was not planted"
+  ! nested "$work/subshell" || fail "a run that never validated its markers passed the gate"
 
   echo "== the status check is able to fail: run reading the pipeline instead of the command"
   # The regression as it actually occurs: a harness with no pipefail that reads $? after

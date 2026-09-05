@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # t.sh — the local test harness: one subcommand per question a test run raises.
 #
-#   t.sh run [-l DIR] [-p PATTERN] [-t N] -- CMD...
+#   t.sh run [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             run CMD once. The status reported is CMD's own, the whole
 #                             output is kept in a log file, and the log is read even when
-#                             CMD exited 0 — because that is not always a success
+#                             CMD exited 0 — because that is not always a success.
+#                             -m adds a marker set from markers/ (a name) or a file path;
+#                             markers/default.txt always applies
 #   t.sh flaky N [-l DIR] [-p PATTERN] -- CMD...
 #                             run CMD N times and report how many runs disagreed with the
 #                             first. Evidence that a test is unstable, never a way to
@@ -29,49 +31,68 @@
 #   2  a usage or harness error, before CMD ever ran
 set -uo pipefail
 
-usage() { sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 die() {
   printf 't.sh: %s\n' "$1" >&2
   exit 2
 }
 
-# >>> LIE MARKERS: a run that printed one of these did not do what its exit status claims.
-# Matched case-insensitively as fixed strings against the whole log. check.sh reads this
-# block out of this file and requires every entry to match its own fixture, so the list is
-# never spelled a second time — a second copy drifts, and a drifted list lies, and a dead
-# entry that matches nothing looks exactly like a guard while guarding nothing.
+HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+MARKER_DIR="$HERE/markers"
+MARKER_FILES=()
+
+# The markers live in markers/*.txt as data, not in this file as code, so the list can grow
+# without touching the harness and so check.sh can read exactly what `run` reads. A NAME
+# with no slash resolves to a set shipped beside this script; anything else is a path.
 #
-# Two kinds live here, and both are failures rather than warnings: markers that mean the
-# suite never ran, and markers that mean something broke in a way an exit status can miss.
-#
-# What is deliberately NOT here: markers that are normal noise in some ecosystem. Go
-# prints `[no test files]` for every package without tests and Rust prints `running 0
-# tests` for every target without them, so in a workspace both fire on a perfectly good
-# run. A marker that cries on healthy runs gets the whole check switched off within a day,
-# which protects nothing. Those live in references/ecosystems/ instead, to be added per
-# repository with -p — see also T_ALLOW, which excuses a marker your repo expects.
-LIE_MARKERS=(
-  'no tests ran'
-  'collected 0 items'
-  'no tests were found'
-  'no tests found'
-  '1..0'
-  'traceback (most recent call last)'
-  'panic:'
-  'addresssanitizer'
-  'leaksanitizer'
-  'command not found'
-  'segmentation fault'
-)
-# <<< LIE MARKERS
+# It assigns to RESOLVED instead of printing, and everything below refuses instead of
+# returning, for one reason: `die` inside a `$(...)` exits the SUBSHELL. The caller carries
+# on with an empty string, so a refusal written that way does not refuse — and here it
+# would leave the marker list empty, which is the one state that makes every run pass while
+# the check still looks like it is working.
+RESOLVED=""
+resolve_markers() {
+  local name="$1"
+  if [[ "$name" != */* && -r "$MARKER_DIR/$name.txt" ]]; then
+    RESOLVED="$MARKER_DIR/$name.txt"
+    return
+  fi
+  [[ -r "$name" ]] ||
+    die "no marker set called '$name' — expected $MARKER_DIR/$name.txt or a readable file"
+  RESOLVED="$name"
+}
+
+# Blank lines and # comments out; everything else verbatim, spaces included
+read_markers() {
+  local file="$1" line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    printf '%s\n' "$line"
+  done <"$file"
+}
+
+# Fills MARKER_PATTERNS from MARKER_FILES. Called from the shell that can actually exit.
+MARKER_PATTERNS=()
+load_markers() {
+  MARKER_PATTERNS=()
+  local file line before
+  for file in "${MARKER_FILES[@]}"; do
+    before=${#MARKER_PATTERNS[@]}
+    while IFS= read -r line; do MARKER_PATTERNS+=("$line"); done < <(read_markers "$file")
+    ((${#MARKER_PATTERNS[@]} > before)) ||
+      die "$file holds no markers — an empty set reads as a working check while checking nothing"
+  done
+  ((${#MARKER_PATTERNS[@]} > 0)) || die "no marker files were loaded"
+}
 
 # Prints "pattern<TAB>line" for every marker found; returns 0 when anything was found.
 # T_ALLOW is an extended regex whose matching lines are dropped before the scan.
 scan_log() {
   local log="$1"
   shift
-  local -a pats=("${LIE_MARKERS[@]}")
+  # Already loaded and validated by the caller, which is the shell that can still exit
+  local -a pats=("${MARKER_PATTERNS[@]}")
   (($#)) && pats+=("$@")
 
   local source="$log"
@@ -94,11 +115,18 @@ scan_log() {
 
 cmd_run() {
   local logdir="${T_LOGDIR:-.test-logs}" tail_n=40 saw_ddash=""
+  MARKER_FILES=("$MARKER_DIR/default.txt")
   local -a extra=()
   while (($#)); do
     case "$1" in
       -l)
         logdir="${2:?-l needs a directory}"
+        shift 2
+        ;;
+      -m)
+        # Additive: the default set always applies, and a repository opts into more
+        resolve_markers "${2:?-m needs a marker set or file}"
+        MARKER_FILES+=("$RESOLVED")
         shift 2
         ;;
       -p)
@@ -119,6 +147,10 @@ cmd_run() {
   done
   [[ -n "$saw_ddash" ]] || die "run: the command must follow -- (t.sh run -- pytest -q)"
   (($#)) || die "run: no command after --"
+
+  # Before the command runs, and from this shell rather than a subshell, so a broken
+  # marker set stops the run instead of quietly making every run a pass
+  load_markers
 
   mkdir -p "$logdir" || die "run: cannot create $logdir"
   local log="${T_LOGFILE:-}"
@@ -383,7 +415,7 @@ cmd_falsify() {
         build="${2:?-b needs a command}"
         shift 2
         ;;
-      -l | -p | -t)
+      -l | -m | -p | -t)
         pass+=("$1" "${2:?$1 needs a value}")
         shift 2
         ;;

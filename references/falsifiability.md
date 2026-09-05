@@ -28,6 +28,10 @@ the same wherever a check is born.
   with `$(cat file)` cannot see a lost trailing newline, because command substitution
   strips it from both sides. Compare bytes with `cmp`, or ask `git diff`, which has no
   opinion about what a line is.
+- **A refusal must run where it can actually refuse.** In shell, `exit` inside a
+  `$(...)`, a `( )` or a pipeline stage ends the subshell, and the caller carries on with
+  an empty string. A guard written there does not guard: it prints to stderr and is
+  ignored. Validate before the substitution, in the shell that can still stop.
 
 ## Falsifying a suite: `t.sh falsify`
 

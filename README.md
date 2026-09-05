@@ -87,6 +87,12 @@ drift away from `run` about what counts as a failure. It exits with the command'
 except **3** when the command exited 0 while its log said otherwise, and **4** when repeated
 runs disagreed
 
+What counts as "the log said otherwise" is data, not code: [`markers/`](markers/) holds one
+line per way a run lies about itself. `default.txt` always applies and may only contain lines
+a healthy run never prints; anything noisier is a per-ecosystem set opted into with
+`-m rust`, or your own file with `-m tests/markers.txt`. A set that resolves to nothing —
+missing, empty, misspelled — is a refusal to run rather than a quiet pass
+
 `bisect` speaks git's vocabulary properly: 125 for a commit that cannot answer — one that
 will not build, has no test runner yet, or whose log says nothing ran — and a crash clamped
 to "bad" rather than the 139 that would abort the whole session
@@ -139,6 +145,7 @@ found real bugs in this repository while being written
 ```
 SKILL.md              the rules an agent reads
 t.sh                  the harness: run / flaky / bisect / falsify
+markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, plus ecosystems/ for the per-language specifics
 templates/defects.sh  the per-repo defect list falsify reads, EXAMPLE markers only
 check.sh              the self-testing gate

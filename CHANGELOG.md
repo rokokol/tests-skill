@@ -6,6 +6,19 @@ version to bump
 
 ## Unreleased
 
+### Changed
+
+- the markers of a lying run moved out of `t.sh` into `markers/*.txt`, so the list grows as
+  data without touching the harness. `markers/default.txt` always applies; `-m NAME` adds a
+  set shipped beside the script and `-m path/to/file` one of your own. `check.sh` reads the
+  same files `run` reads, and requires every entry to catch a line in its set's fixture, so
+  a dead marker cannot sit there looking like a guard. A set that resolves to nothing —
+  missing, empty, misspelled — refuses to run rather than passing quietly
+- the refusal above had to be moved out of `scan_log`, which runs inside a `$(...)`: `die`
+  there exits the subshell and the caller carries on with an empty result, so a guard
+  written that way does not guard. Written as it was, an empty marker list would have made
+  every run a pass while the check still looked like it was working
+
 ### Added
 
 - the skill itself: a core of rules that hold in any language — the command's own status

@@ -104,6 +104,7 @@ runs the wrong thing on the day it matters. `t.sh --help` carries the flags.
 ```
 SKILL.md              this file — the core, the modes, the harness
 t.sh                  run / flaky / bisect / falsify
+markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, plus ecosystems/ for the per-language specifics
 templates/defects.sh  the per-repo defect list falsify reads, EXAMPLE markers only
 check.sh              this repo's own gate, self-tested against known-bad inputs

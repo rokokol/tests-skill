@@ -51,12 +51,27 @@ So a pass has two conditions, not one: the status says so **and** the output agr
 `t.sh run` mechanises exactly that — it greps the log for markers of a run that did not
 happen and refuses to call such a run a pass, whatever its status.
 
-Choosing markers is the part that needs judgement. A marker that fires on healthy runs
-gets the whole check switched off within a day, which protects nothing: `[no test files]`
-in a Go workspace and `running 0 tests` in a Rust one are printed by perfectly good runs,
-so they belong in a per-repo `-p` rather than in a default. Conversely `T_ALLOW` excuses a
-marker a repository genuinely expects — a negative test asserting a traceback — and the
-line that excuses it documents the exception where the next reader will find it.
+Choosing markers is the part that needs judgement, so they live as data in `markers/*.txt`
+rather than inside the harness, and the list is meant to grow as runs teach you new ways of
+lying quietly.
+
+- **`markers/default.txt`** always applies, and may hold only lines a healthy run never
+  prints. `[no test files]` in a Go workspace and `running 0 tests` in a Rust one appear on
+  perfectly good runs, and a marker that cries wolf gets the whole check switched off within
+  a day — which protects nothing.
+- **`markers/<ecosystem>.txt`** holds exactly those noisier lines, opted into per repository
+  with `-m go`, `-m rust`, `-m pytest`, and so on, or with `-m path/to/your-own.txt`.
+- **`-p 'text'`** adds a single marker for one run, which is how a new one usually starts
+  life before it earns a place in a file.
+- **`T_ALLOW='regex'`** excuses a marker a repository genuinely expects — a negative test
+  asserting a traceback — and the line that excuses it documents the exception where the
+  next reader will find it.
+
+Two rules keep the files honest, and `check.sh` enforces both: every entry in every set must
+catch a line in that set's fixture, so a dead marker cannot sit there looking like a guard;
+and every entry in the default set must additionally stay silent on a healthy fixture. A set
+that resolves to nothing — a missing file, an empty one, a name that does not exist — is a
+refusal to run, never a quiet pass.
 
 ## Verification before completion
 
