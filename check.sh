@@ -126,12 +126,79 @@ status=0
 ./t.sh flaky 3 -l "$work/logs" sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 2)) || fail "flaky accepted a command that was not put after -- (got $status)"
 
+echo "== bisect names the commit that broke it, across a history holding an unbuildable one"
+# A throwaway history where the answer is known in advance. The commit in the middle that
+# does not build is the whole point: git bisect run treats a raw nonzero as "bad", so a
+# harness that does not turn "cannot build" into a skip confidently blames the wrong commit.
+repo="$work/bisect-repo"
+mkdir -p "$repo"
+git -C "$repo" init -q -b master
+git -C "$repo" config user.name check
+git -C "$repo" config user.email check@example.invalid
+commit() { # commit MESSAGE
+  git -C "$repo" add -A
+  git -C "$repo" commit -q -m "$1"
+  git -C "$repo" rev-parse HEAD
+}
+: >"$repo/builds"
+: >"$repo/passes"
+first_good=$(commit "good: it builds and the test passes")
+rm "$repo/builds"
+commit "untestable: this commit does not build" >/dev/null
+# A testable good commit has to sit between the unbuildable one and the breakage, or the
+# answer is genuinely ambiguous: with the middle commit skipped, "first bad" could be
+# either it or the one after, and git would be right to say so.
+: >"$repo/builds"
+commit "good again, and testable" >/dev/null
+rm "$repo/passes"
+first_bad=$(commit "bad: it builds, and the test fails")
+echo change >"$repo/note"
+commit "bad too, further along" >/dev/null
+
+status=0
+bisect_out=$(cd "$repo" && "$HERE/t.sh" bisect "$first_good" -b 'test -f builds' -- test -f passes 2>&1) ||
+  status=$?
+((status == 0)) || fail "bisect exited $status on a history it should have resolved:"$'\n'"$bisect_out"
+grep -qF "$first_bad" <<<"$bisect_out" ||
+  fail "bisect did not name $first_bad as the first bad commit:"$'\n'"$bisect_out"
+# And it must leave the repository where it found it, not detached mid-bisect
+[[ "$(git -C "$repo" rev-parse --abbrev-ref HEAD)" == master ]] ||
+  fail "bisect left the repository detached instead of resetting it"
+
+echo "== every status a commit can produce maps to the right bisect verdict"
+# Asserted on the probe directly rather than through a bisect: which commits git chooses
+# to visit is its own business, so a skip may simply never happen in a given history. A
+# check that only sometimes exercises the branch it guards is not a check.
+probe() { # probe EXPECTED DESCRIPTION -- CMD...
+  local expected="$1" what="$2"
+  shift 2
+  local got=0
+  (cd "$repo" && "$HERE/t.sh" bisect-probe -l "$work/logs" "$@") >/dev/null 2>&1 || got=$?
+  ((got == expected)) || fail "a commit that $what should be $expected to git bisect, but the probe said $got"
+}
+probe 0 "builds and passes" -b true -- true
+probe 1 "builds and fails" -b true -- false
+probe 125 "does not build" -b false -- true
+probe 125 "has no test runner (exit 127)" -- sh -c 'exit 127'
+probe 125 "runs nothing while exiting 0" -- sh -c 'echo "collected 0 items"; exit 0'
+# 128+n means killed by a signal, and git bisect ABORTS on anything above 127 rather than
+# treating it as a verdict. Clamping it to "bad" is what keeps a crashing commit from
+# ending the session.
+probe 1 "is killed by a signal" -- sh -c 'kill -SEGV $$'
+
+echo "== bisect refuses to start on a working tree it would trample"
+echo dirty >"$repo/passes"
+status=0
+(cd "$repo" && "$HERE/t.sh" bisect "$first_good" -- true) >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "bisect started with uncommitted changes in the tree (got $status)"
+git -C "$repo" checkout -q -- . 2>/dev/null || :
+
 echo "== the help text lists every subcommand the dispatcher accepts"
 # The usage text is read out of this file's own header by line range, so it drifts the
 # moment a subcommand is added without moving the range. This is that drift check.
 help=$(./t.sh --help)
 subs=()
-while IFS= read -r sub; do subs+=("$sub"); done < <(sed -n 's/^  \([a-z]*\)) cmd_[a-z]*.*/\1/p' t.sh)
+while IFS= read -r sub; do subs+=("$sub"); done < <(sed -n 's/^  \([a-z-]*\)) cmd_[a-z_]*.*/\1/p' t.sh)
 # An extractor that matches nothing would leave the loop below empty and read as "no
 # drift" — the exact way a broken check goes on looking like a working one
 ((${#subs[@]} >= 2)) || fail "only ${#subs[@]} subcommand(s) could be read out of t.sh — the extractor is broken"
@@ -186,6 +253,16 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/undocumented/t.sh"
   grep -qF 'wat) cmd_run' "$work/undocumented/t.sh" || fail "the undocumented-subcommand fixture was not planted"
   ! nested "$work/undocumented" || fail "a subcommand missing from the help passed the gate"
+
+  echo "== the bisect status mapping is able to fail: statuses passed through raw"
+  copy "$work/raw"
+  # shellcheck disable=SC2016  # the $status is the defect being planted, not an expansion
+  sed 's/^    \*) return 1 ;;$/    *) return "$status" ;;/' t.sh >"$work/raw/t.sh.new" &&
+    mv "$work/raw/t.sh.new" "$work/raw/t.sh"
+  chmod +x "$work/raw/t.sh"
+  # shellcheck disable=SC2016  # $status is t.sh's own source text, not an expansion here
+  grep -qF 'return "$status" ;;' "$work/raw/t.sh" || fail "the raw-status fixture was not planted"
+  ! nested "$work/raw" || fail "a probe returning 139 to git bisect passed the gate — a crash would abort the session"
 
   echo "== the log-is-writable guard is able to fail"
   copy "$work/nolog"

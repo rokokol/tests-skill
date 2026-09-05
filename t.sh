@@ -9,6 +9,12 @@
 #                             run CMD N times and report how many runs disagreed with the
 #                             first. Evidence that a test is unstable, never a way to
 #                             tolerate one
+#   t.sh bisect GOOD [-b BUILD] [-p PATTERN] -- CMD...
+#                             git bisect run between GOOD and HEAD, judging each commit
+#                             with run. A commit that cannot be built is skipped rather
+#                             than blamed
+#   t.sh bisect-probe [-b BUILD] [-p PATTERN] -- CMD...
+#                             internal: the single-commit verdict `git bisect run` calls
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -19,7 +25,7 @@
 #   2  a usage or harness error, before CMD ever ran
 set -uo pipefail
 
-usage() { sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 die() {
   printf 't.sh: %s\n' "$1" >&2
@@ -219,11 +225,112 @@ cmd_flaky() {
   return 4
 }
 
+# The verdict on ONE commit, in the vocabulary `git bisect run` speaks:
+#
+#   0        good
+#   1        bad
+#   125      skip — this commit cannot answer the question
+#   126+     git bisect ABORTS the whole session
+#
+# That last line is why nothing here passes a status through untouched. A test runner that
+# is missing at an old commit exits 127, and a raw pass-through would end the bisect
+# instead of stepping over that commit; a suite killed by a signal exits 128+n and would do
+# the same. Both are clamped below, and the two states that mean "no answer" — a commit
+# that will not build, and a run whose log says it never really ran — become skips rather
+# than a confident, wrong accusation.
+cmd_bisect_probe() {
+  local build=""
+  local -a pass=()
+  while (($#)); do
+    case "$1" in
+      -b)
+        build="${2:?-b needs a command}"
+        shift 2
+        ;;
+      --) break ;;
+      *)
+        pass+=("$1")
+        shift
+        ;;
+    esac
+  done
+  [[ "${1:-}" == "--" ]] || die "bisect-probe: the command must follow --"
+
+  if [[ -n "$build" ]]; then
+    if ! sh -c "$build" >&2; then
+      echo "t.sh: this commit does not build — skipping it rather than blaming it" >&2
+      return 125
+    fi
+  fi
+
+  # A short tail by default: a bisect prints one verdict per commit, and forty lines each
+  # buries the answer. A -t the caller passed comes later in the list and wins.
+  local status=0
+  cmd_run -t 5 "${pass[@]+"${pass[@]}"}" "$@" || status=$?
+  case "$status" in
+    0) return 0 ;;
+    2 | 3 | 125 | 127)
+      # 2 the harness could not run it, 3 the run did not really run, 127 the runner is
+      # not there at this commit. None of them is evidence against the commit.
+      echo "t.sh: no verdict from this commit (exit $status) — skipping" >&2
+      return 125
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_bisect() {
+  local good="${1:-}"
+  [[ -n "$good" ]] || die "bisect: needs a known-good ref (t.sh bisect v1.2.0 -- pytest -q)"
+  shift
+  local -a pass=()
+  while (($#)); do
+    case "$1" in
+      --) break ;;
+      *)
+        pass+=("$1")
+        shift
+        ;;
+    esac
+  done
+  [[ "${1:-}" == "--" ]] || die "bisect: the command must follow -- (t.sh bisect HEAD~20 -- pytest -q)"
+
+  git rev-parse --git-dir >/dev/null 2>&1 || die "bisect: not inside a git repository"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    die "bisect: the working tree has uncommitted changes — commit or stash them first, because bisect checks other commits out over them"
+  fi
+  git rev-parse --verify --quiet "$good^{commit}" >/dev/null ||
+    die "bisect: '$good' is not a commit in this repository"
+
+  local self
+  self=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")
+
+  # Logs go outside the working tree: bisect checks other commits out over it, and a
+  # directory of logs sitting in the middle of that is noise at best
+  local logdir
+  logdir=$(mktemp -d) || die "bisect: cannot create a log directory"
+  echo "t.sh: logs for this bisect are in $logdir"
+
+  # Leaving a repository in a detached bisect state is a nasty thing to do to whoever runs
+  # this, including on an interrupt
+  trap 'git bisect reset >/dev/null 2>&1 || :' EXIT
+
+  git bisect start >/dev/null || die "bisect: could not start"
+  git bisect bad HEAD >/dev/null || die "bisect: could not mark HEAD bad"
+  git bisect good "$good" >/dev/null || die "bisect: could not mark $good good"
+
+  local status=0
+  T_LOGDIR="$logdir" git bisect run "$self" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" || status=$?
+  return "$status"
+}
+
 cmd="${1:-}"
 (($# == 0)) || shift
 case "$cmd" in
   run) cmd_run "$@" ;;
   flaky) cmd_flaky "$@" ;;
+  bisect) cmd_bisect "$@" ;;
+  bisect-probe) cmd_bisect_probe "$@" ;;
   -h | --help | help) usage ;;
   '')
     usage >&2
