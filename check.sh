@@ -27,6 +27,15 @@ fail() {
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
+# Say which tool is missing, rather than dying halfway through with a bare "command not
+# found" that the reader then has to trace back to a step
+missing=()
+for tool in actionlint shellcheck shfmt git; do
+  command -v "$tool" >/dev/null || missing+=("$tool")
+done
+((${#missing[@]} == 0)) ||
+  fail "missing: ${missing[*]} — they are pinned in the flake, so run this as: nix develop -c ./check.sh"
+
 echo "== the scripts parse and lint"
 for s in "${scripts[@]}"; do bash -n "$s"; done
 shellcheck "${scripts[@]}"
