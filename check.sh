@@ -32,6 +32,15 @@ for s in "${scripts[@]}"; do bash -n "$s"; done
 shellcheck "${scripts[@]}"
 shfmt -d -i 2 -ci "${scripts[@]}"
 
+echo "== the workflows are valid, and their tools come from the lock rather than a registry"
+actionlint
+# This repo follows its own advice about pinning: a job that resolves a tool at run time
+# changes behaviour with zero change in the repository. The guard is here as well as in the
+# workflow, so it also fails locally rather than only after a push.
+if grep -rEn 'nix (run|shell) nixpkgs#|npx +[a-z@.-]|pip +install |go +install .*@latest' .github/workflows; then
+  fail "an unpinned registry lookup in a workflow — pin the tool in the flake's dev shell and use nix develop"
+fi
+
 echo "== SKILL.md carries the frontmatter an agent loads it by"
 # A skill whose frontmatter is malformed or renamed is simply never loaded, and nothing
 # says so: the agent just never reaches for it.
