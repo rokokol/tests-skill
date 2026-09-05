@@ -14,7 +14,7 @@ cd "$HERE"
 
 # One source of truth for what gets linted. A second copy of this list drifts, and a
 # drifted list lies about what was checked.
-scripts=(t.sh check.sh)
+scripts=(t.sh check.sh templates/defects.sh)
 
 fail() {
   echo "check: $1" >&2
@@ -193,6 +193,84 @@ status=0
 ((status == 2)) || fail "bisect started with uncommitted changes in the tree (got $status)"
 git -C "$repo" checkout -q -- . 2>/dev/null || :
 
+echo "== falsify separates what the suite caught from what it never saw"
+# A throwaway repository whose suite deliberately covers one guard and not the other, so
+# every verdict falsify can reach is exercised on a known answer.
+fal="$work/falsify-repo"
+mkdir -p "$fal/tests"
+cat >"$fal/impl.sh" <<'IMPL'
+#!/bin/sh
+clamp() { if [ "$1" -lt 0 ]; then echo 0; else echo "$1"; fi; }
+strip() { echo "$1" | tr -d ' '; }
+IMPL
+cat >"$fal/suite.sh" <<'SUITE'
+#!/bin/sh
+. ./impl.sh
+[ "$(clamp -5)" = "0" ] || { echo "clamp let a negative through"; exit 1; }
+echo "1 passed"
+SUITE
+cat >"$fal/tests/defects.sh" <<'DEFECTS'
+defect 'clamp/negative' 'impl.sh' \
+  'if [ "$1" -lt 0 ]' 'if false' \
+  'a negative reading is reported as-is instead of being clamped to zero'
+defect 'strip/spaces' 'impl.sh' \
+  "tr -d ' '" 'cat' \
+  'a name keeps the spaces that were supposed to be removed'
+defect 'gone/drifted' 'impl.sh' \
+  'a line that is not in the file' 'anything' \
+  'nothing: this entry exists to prove a drifted list says so'
+defect 'syntax/broken' 'impl.sh' \
+  'clamp() {' 'clamp() {{{' \
+  'nothing: this edit only breaks the syntax, which a parser notices and a test does not'
+DEFECTS
+chmod +x "$fal/impl.sh" "$fal/suite.sh"
+git -C "$fal" init -q -b master
+git -C "$fal" config user.name check
+git -C "$fal" config user.email check@example.invalid
+git -C "$fal" add -A
+git -C "$fal" commit -q -m "the fixture"
+# A pristine copy to diff against byte for byte. Comparing `$(cat file)` with `$(cat file)`
+# would pass a restore that dropped the trailing newline, because command substitution
+# strips it from both sides — a check sharing the blind spot of the code it checks.
+cp "$fal/impl.sh" "$work/impl.sh.pristine"
+
+status=0
+fal_out=$(cd "$fal" && "$HERE/t.sh" falsify -b 'sh -n impl.sh' -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
+((status == 1)) || fail "falsify exited $status where defects went unnoticed:"$'\n'"$fal_out"
+grep -q '^caught    clamp/negative' <<<"$fal_out" ||
+  fail "falsify did not credit the suite for the guard it does cover:"$'\n'"$fal_out"
+grep -q '^SURVIVED  strip/spaces' <<<"$fal_out" ||
+  fail "falsify did not report the guard nothing checks:"$'\n'"$fal_out"
+grep -q '^stale     gone/drifted' <<<"$fal_out" ||
+  fail "falsify guessed at a find text that no longer matches instead of reporting it stale:"$'\n'"$fal_out"
+# The one the user has to be able to trust: an edit that only breaks the build is not
+# evidence that any test noticed anything
+grep -q '^unusable  syntax/broken' <<<"$fal_out" ||
+  fail "falsify credited the suite for an edit that merely stopped the code building:"$'\n'"$fal_out"
+
+echo "== falsify puts the source back byte for byte"
+cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
+  fail "falsify did not restore impl.sh byte for byte"
+git -C "$fal" diff --quiet || fail "falsify left the working tree dirty"
+
+echo "== falsify refuses the situations where its answer would be meaningless"
+status=0
+(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh -c 'exit 1') >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "falsify measured against an already-failing suite (got $status)"
+status=0
+(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0') \
+  >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "falsify measured against a suite that never really ran (got $status)"
+echo dirt >"$fal/impl.sh.tmp" && mv "$fal/impl.sh.tmp" "$fal/impl.sh"
+status=0
+(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "falsify started on a dirty tree, where an interrupted restore looks like your own edits (got $status)"
+git -C "$fal" checkout -q -- .
+status=0
+: >"$fal/tests/empty.sh"
+(cd "$fal" && "$HERE/t.sh" falsify -d tests/empty.sh -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "falsify accepted an empty defect list, which proves nothing (got $status)"
+
 echo "== the help text lists every subcommand the dispatcher accepts"
 # The usage text is read out of this file's own header by line range, so it drifts the
 # moment a subcommand is added without moving the range. This is that drift check.
@@ -212,8 +290,9 @@ done
 if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy() {
     local dest="$1"
-    mkdir -p "$dest/tests/fixtures"
+    mkdir -p "$dest/tests/fixtures" "$dest/templates"
     cp t.sh check.sh "$dest/"
+    cp templates/defects.sh "$dest/templates/"
     cp tests/fixtures/*.log "$dest/tests/fixtures/"
   }
   nested() { (cd "$1" && T_CHECK_NESTED=1 ./check.sh >/dev/null 2>&1); }
@@ -263,6 +342,19 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   # shellcheck disable=SC2016  # $status is t.sh's own source text, not an expansion here
   grep -qF 'return "$status" ;;' "$work/raw/t.sh" || fail "the raw-status fixture was not planted"
   ! nested "$work/raw" || fail "a probe returning 139 to git bisect passed the gate — a crash would abort the session"
+
+  echo "== the restore check is able to fail: a slurp that loses the trailing newline"
+  # The regression this exact guard was written for. Dropping the `printf x` lets command
+  # substitution eat the file's last newline, so every restore leaves the tree dirty by one
+  # byte — invisible to a string comparison, obvious to git.
+  copy "$work/trailing"
+  # shellcheck disable=SC2016  # both sides are t.sh's own source text, not expansions
+  sed 's/__content=\$(cat "\$2" \&\& printf x)/__content=$(cat "$2")/' t.sh >"$work/trailing/t.sh.new" &&
+    mv "$work/trailing/t.sh.new" "$work/trailing/t.sh"
+  chmod +x "$work/trailing/t.sh"
+  # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
+  grep -qF '__content=$(cat "$2")' "$work/trailing/t.sh" || fail "the trailing-newline fixture was not planted"
+  ! nested "$work/trailing" || fail "a falsify that leaves the source one byte different passed the gate"
 
   echo "== the log-is-writable guard is able to fail"
   copy "$work/nolog"

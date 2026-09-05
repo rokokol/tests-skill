@@ -15,6 +15,10 @@
 #                             than blamed
 #   t.sh bisect-probe [-b BUILD] [-p PATTERN] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
+#   t.sh falsify [-d FILE] [-b BUILD] [FILTER] -- CMD...
+#                             break one guard at a time, as written by hand in FILE
+#                             (default tests/defects.sh), and require the suite to notice.
+#                             A defect the suite survives names something nobody checks
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -25,7 +29,7 @@
 #   2  a usage or harness error, before CMD ever ran
 set -uo pipefail
 
-usage() { sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 die() {
   printf 't.sh: %s\n' "$1" >&2
@@ -324,6 +328,197 @@ cmd_bisect() {
   return "$status"
 }
 
+# A passing suite says the code works. It does not say the suite would notice if the code
+# stopped working, and that is the question worth asking of a green run. This answers it by
+# applying, one at a time, edits a human wrote down — never edits it invented. Nothing here
+# generates mutants: a tool that rewrites code on its own mostly produces code that will
+# not compile, and a compiler error is not a test noticing anything.
+DEF_NAME=()
+DEF_FILE=()
+DEF_FIND=()
+DEF_REPLACE=()
+DEF_WHY=()
+
+# The one call a defects file makes. Sourced, so the file is plain bash and needs no parser.
+defect() {
+  (($# == 5)) ||
+    die "defects: defect takes 5 arguments (name file find replace consequence), got $#"
+  DEF_NAME+=("$1")
+  DEF_FILE+=("$2")
+  DEF_FIND+=("$3")
+  DEF_REPLACE+=("$4")
+  DEF_WHY+=("$5")
+}
+
+# Reads a file into the variable NAMED by $1, so putting it back is byte-for-byte rather
+# than close enough. It assigns rather than prints for a reason: command substitution
+# strips trailing newlines, so `var=$(slurp f)` would throw away the very thing the
+# `printf x` dance exists to preserve — and a restore that drops a trailing newline leaves
+# the working tree dirty in a way only a byte-wise diff notices.
+slurp() { # slurp VARNAME FILE
+  local __content
+  __content=$(cat "$2" && printf x) || return 1
+  printf -v "$1" '%s' "${__content%x}"
+}
+
+count_occurrences() {
+  local haystack="$1" needle="$2" n=0
+  while [[ "$haystack" == *"$needle"* ]]; do
+    haystack="${haystack#*"$needle"}"
+    n=$((n + 1))
+  done
+  printf '%d' "$n"
+}
+
+cmd_falsify() {
+  local defects="tests/defects.sh" build="" filter=""
+  local -a pass=()
+  while (($#)); do
+    case "$1" in
+      -d)
+        defects="${2:?-d needs a file}"
+        shift 2
+        ;;
+      -b)
+        build="${2:?-b needs a command}"
+        shift 2
+        ;;
+      -l | -p | -t)
+        pass+=("$1" "${2:?$1 needs a value}")
+        shift 2
+        ;;
+      --) break ;;
+      *)
+        [[ -z "$filter" ]] || die "falsify: only one filter may be given"
+        filter="$1"
+        shift
+        ;;
+    esac
+  done
+  [[ "${1:-}" == "--" ]] || die "falsify: the suite command must follow -- (t.sh falsify -- pytest -q)"
+  [[ -r "$defects" ]] || die "falsify: cannot read $defects — write the defect list first (see templates/defects.sh)"
+
+  # A dirty tree makes an interrupted restore indistinguishable from your own edits, and
+  # this is a command that edits your source on purpose
+  git rev-parse --git-dir >/dev/null 2>&1 || die "falsify: not inside a git repository"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    die "falsify: the working tree has uncommitted changes — commit or stash them first, so an interrupted run cannot be mistaken for your own edits"
+  fi
+
+  # shellcheck source=/dev/null
+  source "$defects"
+  ((${#DEF_NAME[@]} > 0)) || die "falsify: $defects declared no defects — an empty list proves nothing"
+
+  local -a files=()
+  local f
+  for f in "${DEF_FILE[@]}"; do
+    [[ " ${files[*]-} " == *" $f "* ]] || files+=("$f")
+  done
+  local -A original=()
+  local __slurped=""
+  for f in "${files[@]}"; do
+    [[ -r "$f" ]] || die "falsify: $defects names $f, which cannot be read"
+    slurp __slurped "$f" || die "falsify: cannot read $f"
+    original["$f"]="$__slurped"
+  done
+
+  # Restoration happens here and not only at the end of the loop, so an interrupt, a
+  # failure or a kill cannot leave the source edited. The contents come from memory rather
+  # than from git, so this needs neither a clean checkout nor git to be working.
+  # shellcheck disable=SC2317  # reached through the trap, which shellcheck does not follow
+  restore_all() {
+    local file
+    for file in "${files[@]}"; do
+      printf '%s' "${original[$file]}" >"$file" 2>/dev/null || :
+    done
+  }
+  trap 'restore_all' EXIT INT TERM
+
+  suite_verdict() { # prints caught | survived | unusable
+    if [[ -n "$build" ]]; then
+      if ! sh -c "$build" >/dev/null 2>&1; then
+        printf 'unusable'
+        return
+      fi
+    fi
+    local status=0
+    cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@" >/dev/null 2>&1 || status=$?
+    case "$status" in
+      0) printf 'survived' ;;
+      3) printf 'unusable' ;;
+      *) printf 'caught' ;;
+    esac
+  }
+
+  echo "== the suite is green before anything is broken"
+  # Falsification measures the distance between green and red. Starting red there is no
+  # distance, and every "caught" below would be meaningless.
+  local baseline
+  baseline=$(suite_verdict "$@")
+  case "$baseline" in
+    caught) die "falsify: the suite is already failing — fix that first, or nothing measured here means anything" ;;
+    unusable) die "falsify: the suite did not really run before any edit — check the build command and the log" ;;
+  esac
+
+  local i name file find replace why verdict content mutated occurrences
+  local -a survived=() ran=()
+  for i in "${!DEF_NAME[@]}"; do
+    name="${DEF_NAME[$i]}"
+    [[ -z "$filter" || "$name" == *"$filter"* ]] || continue
+    file="${DEF_FILE[$i]}"
+    find="${DEF_FIND[$i]}"
+    replace="${DEF_REPLACE[$i]}"
+    why="${DEF_WHY[$i]}"
+    ran+=("$name")
+
+    content="${original[$file]}"
+    occurrences=$(count_occurrences "$content" "$find")
+    if ((occurrences != 1)); then
+      # Not guessed at: a list that no longer describes the code has to say so, or it
+      # quietly stops testing the thing it was written for
+      printf 'stale     %s: its find text matches %s times in %s, not once\n' "$name" "$occurrences" "$file"
+      survived+=("$name")
+      continue
+    fi
+
+    mutated="${content//"$find"/"$replace"}"
+    printf '%s' "$mutated" >"$file"
+    verdict=$(suite_verdict "$@")
+    printf '%s' "$content" >"$file"
+
+    case "$verdict" in
+      caught) printf 'caught    %s\n' "$name" ;;
+      survived)
+        printf 'SURVIVED  %s: %s\n' "$name" "$why"
+        survived+=("$name")
+        ;;
+      unusable)
+        # The compiler noticed the syntax; the tests said nothing. Calling this "caught"
+        # is how a suite gets credit for coverage it does not have.
+        printf 'unusable  %s: the edit stopped it building, so the tests were never asked\n' "$name"
+        survived+=("$name")
+        ;;
+    esac
+  done
+
+  restore_all
+  trap - EXIT INT TERM
+  for f in "${files[@]}"; do
+    slurp __slurped "$f" || die "falsify: cannot re-read $f to confirm it was restored"
+    [[ "$__slurped" == "${original[$f]}" ]] ||
+      die "falsify: $f was not restored to what it was — restore it from git before doing anything else"
+  done
+
+  ((${#ran[@]} > 0)) || die "falsify: no defect matched the filter '$filter'"
+
+  echo
+  if ((${#survived[@]} > 0)); then
+    printf '%d of %d defect(s) were not caught by the suite.\n' "${#survived[@]}" "${#ran[@]}" >&2
+    return 1
+  fi
+  printf 'all %d defect(s) were caught by the suite.\n' "${#ran[@]}"
+}
+
 cmd="${1:-}"
 (($# == 0)) || shift
 case "$cmd" in
@@ -331,6 +526,7 @@ case "$cmd" in
   flaky) cmd_flaky "$@" ;;
   bisect) cmd_bisect "$@" ;;
   bisect-probe) cmd_bisect_probe "$@" ;;
+  falsify) cmd_falsify "$@" ;;
   -h | --help | help) usage ;;
   '')
     usage >&2
