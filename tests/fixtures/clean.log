@@ -1,0 +1,11 @@
+A healthy run. No entry in t.sh's LIE MARKERS table may match anything here: a marker
+that fires on a good run gets the whole check switched off within a day.
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.4, pytest-8.3.2
+collected 47 items
+
+tests/test_sync.py ..............                                        [ 29%]
+tests/test_render.py ................................                    [100%]
+
+============================== 47 passed in 1.83s ==============================

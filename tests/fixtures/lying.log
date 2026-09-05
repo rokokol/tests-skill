@@ -1,0 +1,16 @@
+A log carrying one realistic line per entry in t.sh's LIE MARKERS table. check.sh reads
+the table out of t.sh and requires every entry to match something here — an entry that
+matches nothing is dead weight that looks like a guard.
+
+============================= test session starts ==============================
+collected 0 items
+=========================== no tests ran in 0.01s ==============================
+No tests were found!!!
+No tests found, exiting with code 1
+1..0
+Traceback (most recent call last):
+panic: runtime error: index out of range [3] with length 3
+==4242==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010
+==4242==ERROR: LeakSanitizer: detected memory leaks
+tests/run.sh: line 12: shellcheck: command not found
+tests/run.sh: line 30:  4242 Segmentation fault      (core dumped) ./a.out
