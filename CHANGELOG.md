@@ -1,10 +1,11 @@
 # Changelog
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather
-than numbered — a skill is read at whatever revision you have checked out, so there is no
-version to bump
+than numbered, and with no `Unreleased` section — a skill is read at whatever revision you
+have checked out, so whatever is on the default branch is what everyone already has, and a
+section for work that has landed but not shipped would never close
 
-## Unreleased
+## 2026-09-05
 
 ### Fixed
 

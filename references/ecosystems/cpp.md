@@ -6,13 +6,16 @@ test can pass while the program has already corrupted its own memory.
 ## Run it so it cannot lie quietly
 
 ```sh
-t.sh run -b 'cmake --build build -j' -- ctest --test-dir build --output-on-failure
+t.sh run -- cmake --build build -j
+t.sh run -m cpp -- ctest --test-dir build --output-on-failure
 ```
 
 - `--output-on-failure` — otherwise ctest prints a table of names and you never see why.
-- `-b` is not optional here: a run whose build silently used yesterday's binaries answers
-  about yesterday's code. Keep build and test separate so a build failure is a build
-  failure, not a mysterious test failure.
+- **Building is its own gated step, not a preamble.** A run whose build quietly used
+  yesterday's binaries answers about yesterday's code, and a build failure folded into the
+  test command reads as a mysterious test failure. Two `t.sh run` invocations keep them
+  apart. (`falsify` and `bisect` take `-b` instead, because there the harness has to tell
+  the two apart without you watching.)
 - Warnings as errors on your own targets (`-Wall -Wextra -Werror`), not on vendored ones.
 - Sanitizers in a dedicated CI job — `-fsanitize=address,undefined` — because they catch
   what a passing test cannot: use-after-free, overflow, unaligned access.

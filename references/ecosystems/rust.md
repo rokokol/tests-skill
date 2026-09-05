@@ -3,8 +3,14 @@
 ## Run it so it cannot lie quietly
 
 ```sh
-t.sh run -b 'cargo build --workspace --all-targets' -- cargo test --workspace --no-fail-fast
+t.sh run -- cargo build --workspace --all-targets
+t.sh run -m rust -- cargo test --workspace --no-fail-fast
 ```
+
+Two invocations, not one: a build failure is a build failure, and folding it into the test
+run turns "it does not compile" into "the tests failed", which sends the next reader to the
+wrong place. `-b` belongs to `falsify` and `bisect`, where the harness has to tell those two
+apart on your behalf; here you can see which command went red.
 
 - `--workspace` — without it, `cargo test` in a workspace root may test one member and
   report success for the whole thing.

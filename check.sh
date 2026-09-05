@@ -122,6 +122,38 @@ for doc in "${docs[@]}"; do
   done < <(grep -o '](\([^)]*\))' "$doc" | sed 's/^](//; s/)$//' | grep -v '^[a-z]*://')
 done
 
+echo "== every t.sh example in the docs uses flags that subcommand actually accepts"
+# A documented command is a hand-written mirror of the parser, and mirrors drift. This one
+# drifted the day it was written: two ecosystem references showed `t.sh run -b '...'`, and
+# `run` has no -b — the build phase belongs to falsify and bisect. Found by somebody trying
+# to follow the documentation, which is the expensive way to find it.
+flags_of() { # flags_of SUBCOMMAND -> the flags its parser accepts, one per line
+  awk -v want="cmd_${1//-/_}()" '
+    $0 ~ "^"want { inside = 1; next }
+    inside && /^}/ { inside = 0 }
+    inside && match($0, /^ *(-[a-zA-Z])(\ *\|\ *-[a-zA-Z])*\)/) {
+      line = substr($0, RSTART, RLENGTH)
+      gsub(/[)| ]/, "\n", line)
+      print line
+    }
+  ' t.sh | grep -o '^-[a-zA-Z]$' | sort -u
+}
+examples=0
+while IFS= read -r example; do
+  sub=$(awk '{print $2}' <<<"$example")
+  [[ -n "$sub" && "$sub" != -* ]] || continue
+  allowed=$(flags_of "$sub")
+  [[ -n "$allowed" ]] || fail "the docs show 't.sh $sub' but no cmd_$sub parses anything — the extractor or the example is wrong"
+  examples=$((examples + 1))
+  # only the part before --, which is where flags live
+  before_ddash="${example%% -- *}"
+  for flag in $(grep -o ' -[a-zA-Z]\b' <<<"$before_ddash" || :); do
+    grep -qx -- "${flag# }" <<<"$allowed" ||
+      fail "the docs show 't.sh $sub ${flag# }', which that subcommand does not accept: $example"
+  done
+done < <(grep -rhoE '(^|\$ )t\.sh [a-z-]+[^|`]*' README.md SKILL.md references/ | sed 's/^\$ //')
+((examples > 0)) || fail "no t.sh examples were found in the docs — the extractor is broken"
+
 echo "== every marker catches its own fixture, and no default one cries on a healthy run"
 # Read from the same files `t.sh run` reads, never from a second copy of the list: two
 # copies disagree within a month, and then the gate is testing the copy.
@@ -519,6 +551,12 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy "$work/deadanchor"
   printf '\nSee [nowhere](references/verdict.md#no-such-heading).\n' >>"$work/deadanchor/SKILL.md"
   catches "$work/deadanchor" "where no heading has that anchor" "a link to a nonexistent heading"
+
+  echo "== the documented-flag check is able to fail: the mistake a reader actually hit"
+  copy "$work/badflag"
+  printf '\n```sh\nt.sh run -b '"'"'cargo build'"'"' -- cargo test\n```\n' \
+    >>"$work/badflag/references/verdict.md"
+  catches "$work/badflag" "which that subcommand does not accept" "a documented flag the parser does not have"
 
   echo "== the marker check is able to fail: a dead entry"
   copy "$work/dead"
