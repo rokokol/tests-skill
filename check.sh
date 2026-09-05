@@ -128,6 +128,17 @@ for set_file in markers/*.txt; do
 done
 ((set_count > 0)) || fail "no marker sets were found in markers/ — the glob is broken"
 
+# An ecosystem set repeating a default entry adds nothing: the default already applies to
+# every run, so the copy is dead weight that reads as extra coverage
+for set_file in markers/*.txt; do
+  [[ "$set_file" == markers/default.txt ]] && continue
+  dupe=$(comm -12 \
+    <(grep -v '^#' markers/default.txt | grep -v '^$' | sort) \
+    <(grep -v '^#' "$set_file" | grep -v '^$' | sort))
+  [[ -z "$dupe" ]] ||
+    fail "$set_file repeats markers that markers/default.txt already applies to every run: $dupe"
+done
+
 echo "== run refuses a marker set that would leave it checking nothing"
 status=0
 ./t.sh run -t 0 -l "$work/logs" -m no-such-set -- true >/dev/null 2>&1 || status=$?
@@ -419,6 +430,11 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy "$work/noisy"
   printf 'test session starts\n' >>"$work/noisy/markers/default.txt"
   ! nested "$work/noisy" || fail "a marker that fires on the clean fixture passed the gate"
+
+  echo "== the duplicate check is able to fail: a set repeating a default marker"
+  copy "$work/dupe"
+  printf 'no tests ran\n' >>"$work/dupe/markers/go.txt"
+  ! nested "$work/dupe" || fail "a set repeating a default marker passed the gate — the copy adds nothing"
 
   echo "== the marker check is able to fail: a set with no fixture behind it"
   copy "$work/unproven"

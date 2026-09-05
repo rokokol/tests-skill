@@ -1,0 +1,8 @@
+A log carrying one realistic line per entry in markers/go.txt.
+
+?       example.com/mod/internal/config [no test files]
+ok      example.com/mod/store   0.002s [no tests to run]
+testing: warning: no tests to run
+ok      example.com/mod/api     (cached)
+FAIL    example.com/mod/broken [build failed]
+FAIL    example.com/mod/fixture [setup failed]

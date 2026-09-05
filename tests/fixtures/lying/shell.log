@@ -1,0 +1,5 @@
+A log carrying one realistic line per entry in markers/shell.txt.
+
+tests/run.sh: line 41: PREFIX: unbound variable
+tests/run.sh: line 12: /opt/tool/bin/helper: No such file or directory
+not ok 3 the installer writes a manifest

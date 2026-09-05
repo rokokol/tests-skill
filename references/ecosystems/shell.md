@@ -30,6 +30,9 @@ in between, `echo` included, replaces it. **zsh spells it `$pipestatus` and inde
 
 ## Green that lies
 
+`1..0`, `command not found` and `segmentation fault` are in the default set; the rest ship
+as `markers/shell.txt`, opted into with `-m shell`:
+
 | Line | What happened |
 |---|---|
 | `1..0` | a TAP producer planned zero tests |

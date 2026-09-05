@@ -14,6 +14,11 @@ version to bump
   same files `run` reads, and requires every entry to catch a line in its set's fixture, so
   a dead marker cannot sit there looking like a guard. A set that resolves to nothing —
   missing, empty, misspelled — refuses to run rather than passing quietly
+- six per-ecosystem marker sets ship beside the default one — `pytest`, `shell`, `go`,
+  `rust`, `node`, `cpp` — each opted into with `-m NAME` and each with its own fixture, so
+  the knowledge in `references/ecosystems/` is now executable rather than only readable. No
+  ecosystem set may repeat a default entry, which the gate enforces: the default applies to
+  every run already, so the copy would be dead weight reading as extra coverage
 - the refusal above had to be moved out of `scan_log`, which runs inside a `$(...)`: `die`
   there exits the subshell and the caller carries on with an empty result, so a guard
   written that way does not guard. Written as it was, an empty marker list would have made

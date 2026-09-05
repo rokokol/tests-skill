@@ -1,0 +1,14 @@
+A log carrying one realistic line per entry in markers/node.txt.
+
+No test files found, exiting with code 0
+running: vitest run --passWithNoTests
+Tests:       0 total
+● Test suite failed to run
+› 1 snapshot written from 1 test suite.
+› 3 snapshots written from 2 test suites.
+› 1 obsolete snapshot found.
+  at test.only (src/sync.test.ts:14:6)
+  at it.only (src/render.test.ts:9:6)
+  at describe.only (src/api.test.ts:3:1)
+A worker process has failed to exit gracefully and has been force exited.
+Jest did not exit one second after the test run has completed.

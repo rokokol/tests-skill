@@ -19,6 +19,8 @@ t.sh run -- node --test
 
 ## Green that lies
 
+These ship as `markers/node.txt`, opted into with `t.sh run -m node -- npx vitest run`:
+
 | Line | What happened |
 |---|---|
 | `No test files found, exiting with code 0` | the glob matched nothing and someone allowed it |

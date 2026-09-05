@@ -28,8 +28,10 @@ t.sh run -b 'cargo build --workspace --all-targets' -- cargo test --workspace --
 | a panic in a spawned thread | the thread dies, the test may still pass |
 
 `running 0 tests` is printed for every target without tests — doc-test targets and empty
-integration targets included — so it is not in `t.sh`'s default table. Add it with `-p`
-only in a crate where every target really is expected to have tests.
+integration targets included — so it is not in `t.sh`'s default set. It ships as an opt-in
+one instead — `t.sh run -m rust -- cargo test --workspace` — worth adopting in a crate
+where every target really is expected to have tests. `markers/rust.txt` also carries
+`thread 'main' panicked` and the filtered-to-nothing summary line.
 
 ## Determinism
 

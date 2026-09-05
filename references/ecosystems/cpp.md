@@ -20,6 +20,9 @@ t.sh run -b 'cmake --build build -j' -- ctest --test-dir build --output-on-failu
 
 ## Green that lies
 
+The sanitizer lines are in the default set already; the ctest and gtest ones ship as
+`markers/cpp.txt`, opted into with `-m cpp`:
+
 | Line | What happened |
 |---|---|
 | `No tests were found!!!` | ctest found no registered tests and may still exit 0 |

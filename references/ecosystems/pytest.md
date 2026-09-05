@@ -19,7 +19,8 @@ t.sh run -- pytest -q --strict-markers --strict-config -W error -p no:randomly
 
 ## Green that lies
 
-Add these to a run with `-p`, or read them in the log:
+The unambiguous two are already in the default set; the noisier ones ship as
+`markers/pytest.txt`, opted into with `t.sh run -m pytest -- pytest -q`:
 
 | Line | What happened |
 |---|---|

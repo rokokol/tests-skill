@@ -1,0 +1,10 @@
+A log carrying one realistic line per entry in markers/cpp.txt.
+
+[==========] Running 0 tests from 0 test suites.
+[  PASSED  ] 0 tests.
+Unable to find executable: /build/tests/unit_tests
+Errors while running CTest
+src/buffer.cpp:88:17: runtime error: signed integer overflow: 2147483647 + 1
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior src/buffer.cpp:88:17
+make: *** No rule to make target 'tests/unit.o', needed by 'unit_tests'.  Stop.
+ninja: build stopped: subcommand failed.

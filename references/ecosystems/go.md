@@ -27,9 +27,10 @@ t.sh run -- go test ./... -count=1 -race -shuffle=on
 
 `[no test files]` and `[no tests to run]` are the reason those markers are **not** in
 `t.sh`'s default table: in any real module most packages have no tests, and a default that
-fires on them would be switched off on day one. Add them per repository with `-p` when you
-have reached the point of expecting tests everywhere, or grep for the count of `ok ` lines
-instead.
+fires on them would be switched off on day one. They ship as an opt-in set instead —
+`t.sh run -m go -- go test ./... -count=1` — worth adopting once the repository expects
+tests everywhere; before that, grep for the count of `ok ` lines instead. `markers/go.txt`
+also carries `(cached)`, `[build failed]` and `[setup failed]`.
 
 ## Determinism
 

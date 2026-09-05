@@ -1,0 +1,11 @@
+A log carrying one realistic line per entry in markers/pytest.txt.
+
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 errors during collection !!!!!!!!!!!!!!!!!!!!
+ERROR collecting tests/test_sync.py
+XFAIL tests/test_api.py::test_retry - known upstream bug
+XPASS tests/test_api.py::test_backoff - xfailed
+1 xpassed, 4 xfailed
+27 skipped, 3 passed in 0.42s
+PytestUnraisableExceptionWarning: Exception ignored in: <socket.socket ...>
+PytestUnhandledThreadExceptionWarning: Exception in thread Thread-2
+running: pytest --exitfirst -q tests/
