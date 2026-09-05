@@ -1,0 +1,4 @@
+result
+result-*
+# t.sh writes here; logs are evidence for one session, never history
+.test-logs/
