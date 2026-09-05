@@ -99,6 +99,47 @@ status=0
 ./t.sh run sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 2)) || fail "run accepted a command without -- (got $status); guessing is how the wrong thing gets run"
 
+echo "== flaky calls a command that always agrees with itself stable"
+status=0
+./t.sh flaky 3 -l "$work/logs" -- sh -c 'echo "3 passed"; exit 0' >/dev/null 2>&1 || status=$?
+((status == 0)) || fail "flaky called a deterministic green command unstable (got $status)"
+status=0
+./t.sh flaky 3 -l "$work/logs" -- sh -c 'echo "1 failed"; exit 1' >/dev/null 2>&1 || status=$?
+((status == 1)) || fail "flaky did not pass through the status of a command that always fails (got $status)"
+
+echo "== flaky notices a command that disagrees with itself"
+# Deterministic divergence: the first run passes, every run after it fails
+counter="$work/flaky-counter"
+rm -f "$counter"
+status=0
+# shellcheck disable=SC2016  # $0 and $n belong to the inner sh, not to this script
+./t.sh flaky 3 -l "$work/logs" -- \
+  sh -c 'n=$(cat "$0" 2>/dev/null || echo 0); echo $((n + 1)) >"$0"; test "$n" -eq 0' "$counter" \
+  >/dev/null 2>&1 || status=$?
+((status == 4)) || fail "flaky missed a command whose runs disagreed (got $status)"
+
+echo "== flaky refuses the arguments that would make it meaningless"
+status=0
+./t.sh flaky 1 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "flaky accepted a single run, which cannot show disagreement (got $status)"
+status=0
+./t.sh flaky 3 -l "$work/logs" sh -c 'exit 0' >/dev/null 2>&1 || status=$?
+((status == 2)) || fail "flaky accepted a command that was not put after -- (got $status)"
+
+echo "== the help text lists every subcommand the dispatcher accepts"
+# The usage text is read out of this file's own header by line range, so it drifts the
+# moment a subcommand is added without moving the range. This is that drift check.
+help=$(./t.sh --help)
+subs=()
+while IFS= read -r sub; do subs+=("$sub"); done < <(sed -n 's/^  \([a-z]*\)) cmd_[a-z]*.*/\1/p' t.sh)
+# An extractor that matches nothing would leave the loop below empty and read as "no
+# drift" — the exact way a broken check goes on looking like a working one
+((${#subs[@]} >= 2)) || fail "only ${#subs[@]} subcommand(s) could be read out of t.sh — the extractor is broken"
+for sub in "${subs[@]}"; do
+  grep -qF "t.sh $sub" <<<"$help" ||
+    fail "t.sh dispatches '$sub' but its help never mentions it — the usage line range has drifted"
+done
+
 # The steps below prove the checks above can fail, by breaking one thing at a time in a
 # throwaway copy. T_CHECK_NESTED stops the copy from recursing into this same section.
 if [[ -z "${T_CHECK_NESTED:-}" ]]; then
@@ -137,6 +178,14 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/blind/t.sh"
   grep -qF 'local status=$?' "$work/blind/t.sh" || fail "the blind-status fixture was not planted"
   ! nested "$work/blind" || fail "a run reading tee's status passed the gate — the whole premise is unguarded"
+
+  echo "== the help-drift check is able to fail: a subcommand the help never mentions"
+  copy "$work/undocumented"
+  awk '/^  flaky\) cmd_flaky/ && !done { print "  wat) cmd_run \"$@\" ;;"; done=1 } { print }' \
+    t.sh >"$work/undocumented/t.sh.new" && mv "$work/undocumented/t.sh.new" "$work/undocumented/t.sh"
+  chmod +x "$work/undocumented/t.sh"
+  grep -qF 'wat) cmd_run' "$work/undocumented/t.sh" || fail "the undocumented-subcommand fixture was not planted"
+  ! nested "$work/undocumented" || fail "a subcommand missing from the help passed the gate"
 
   echo "== the log-is-writable guard is able to fail"
   copy "$work/nolog"
