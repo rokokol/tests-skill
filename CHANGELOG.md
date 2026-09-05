@@ -14,6 +14,14 @@ version to bump
   same files `run` reads, and requires every entry to catch a line in its set's fixture, so
   a dead marker cannot sit there looking like a guard. A set that resolves to nothing —
   missing, empty, misspelled — refuses to run rather than passing quietly
+- `tests/t.conf`, a repository's own testing policy: which marker sets apply, one-off
+  patterns, the excused-lines regex, the log directory ([template](templates/t.conf)). Read
+  from the current directory only — no search up the tree, because a config found three
+  directories away is a config nobody knew was in effect — and it **never carries the
+  command**, which stays after `--` so a green run's subject is visible where its verdict
+  is. An unknown key, a key with no value or a marker set that does not exist stops the run
+  and names the line: a typo that is skipped leaves a repository believing in markers that
+  were never loaded, which is worse than having no config at all
 - six per-ecosystem marker sets ship beside the default one — `pytest`, `shell`, `go`,
   `rust`, `node`, `cpp` — each opted into with `-m NAME` and each with its own fixture, so
   the knowledge in `references/ecosystems/` is now executable rather than only readable. No

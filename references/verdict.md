@@ -73,6 +73,37 @@ and every entry in the default set must additionally stay silent on a healthy fi
 that resolves to nothing — a missing file, an empty one, a name that does not exist — is a
 refusal to run, never a quiet pass.
 
+## The repository's own policy
+
+Typing `-m rust -p '...'` on every invocation is how a policy gets forgotten, so a
+repository can declare it once in `tests/t.conf`
+([template](../templates/t.conf)):
+
+```
+markers   rust
+markers   tests/markers.txt
+pattern   thread 'main' panicked
+allow     expected: no tests ran
+logdir    .test-logs
+```
+
+Three properties matter more than the format:
+
+- **It carries policy, never the command.** What runs stays after `--`, in the line you
+  typed. A config that supplied the command would mean a green run whose subject nobody can
+  see without opening a file — and the whole point of this harness is that the verdict and
+  what it is about are both visible.
+- **It is read from the current directory only.** No search up the tree: a config found
+  three directories away is a config nobody knew was in effect. `T_CONFIG` points elsewhere,
+  and `T_CONFIG=` turns it off.
+- **A broken config refuses rather than being ignored.** An unknown key, a key with no
+  value, a marker set that does not exist — each stops the run and names the line. A typo
+  that is skipped leaves a repository believing in markers that were never loaded, which is
+  worse than having no config at all.
+
+What you pass on the command line adds to it: `-m` and `-p` append, `-l` and `T_ALLOW`
+override.
+
 ## Verification before completion
 
 The rule is not about suites; it is about claims. Before writing that something works, run

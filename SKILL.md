@@ -97,7 +97,9 @@ what makes a usable defect entry there:
 | `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
 
 The command is always explicit, after `--`: a harness that guesses what your suite is
-runs the wrong thing on the day it matters. `t.sh --help` carries the flags.
+runs the wrong thing on the day it matters. A repository's *policy* — which marker sets
+apply, which lines are excused — can live in `tests/t.conf`, which never carries the
+command for the same reason. `t.sh --help` carries the flags.
 
 ## Layout
 
@@ -106,7 +108,7 @@ SKILL.md              this file — the core, the modes, the harness
 t.sh                  run / flaky / bisect / falsify
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, plus ecosystems/ for the per-language specifics
-templates/defects.sh  the per-repo defect list falsify reads, EXAMPLE markers only
+templates/            defects.sh for falsify, t.conf for a repository's own policy
 check.sh              this repo's own gate, self-tested against known-bad inputs
 tests/fixtures/       the known-bad inputs those checks are proven to catch
 ```

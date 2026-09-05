@@ -61,6 +61,23 @@ done
 grep -qx "name: $skill_name" <<<"$front" ||
   fail "SKILL.md does not call this skill '$skill_name', which is what the readme and the symlink call it"
 
+echo "== no paragraph in the readme is hard-wrapped"
+# GitHub soft-wraps, so a manual break inside a paragraph only means a one-word edit
+# reflows every line after it. This is the one rule of the create-readme skill that a
+# reader cannot see and a script can decide; the rest of that skill's rules live with it.
+hard_wrapped() { # hard_wrapped FILE -> prints the offending line numbers
+  awk '
+    /^```/ { fence = !fence; prev = 0; next }
+    fence { next }
+    # blank, heading, table, list, quote, html, badge, link or indented line: not prose
+    /^[[:space:]]*$/ || /^[#|>< ]/ || /^[-*+]/ || /^!\[/ || /^\[/ { prev = 0; next }
+    { if (prev) print NR; prev = 1 }
+  ' "$1"
+}
+wrapped=$(hard_wrapped README.md)
+[[ -z "$wrapped" ]] ||
+  fail "README.md hard-wraps a paragraph at line(s): $(tr '\n' ' ' <<<"$wrapped")— one paragraph is one line"
+
 echo "== every reference is reachable, and every link and anchor resolves"
 # A reference nothing links to is never loaded, so it rots unread while reading as
 # maintained. Reachability is transitive: SKILL.md may delegate to a reference that links on.
@@ -147,6 +164,41 @@ status=0
 status=0
 ./t.sh run -t 0 -l "$work/logs" -m "$work/empty-markers.txt" -- true >/dev/null 2>&1 || status=$?
 ((status == 2)) || fail "run accepted an empty marker set, which reads as a working check (got $status)"
+
+echo "== a repository's own policy applies, and a broken one stops the run"
+# The config carries policy and never the command, so what runs stays visible in the line
+# you typed. Its failure mode to avoid is silence: a typo'd key that reads as "no policy"
+# leaves a repository believing in markers that were never loaded.
+conf="$work/conf"
+mkdir -p "$conf/tests"
+policy() { printf '%s\n' "$@" >"$conf/tests/t.conf"; }
+in_conf() { # in_conf EXPECTED DESCRIPTION -- CMD...
+  local expected="$1" what="$2"
+  shift 2
+  local got=0
+  (cd "$conf" && "$HERE/t.sh" run -t 0 -l "$work/logs" "$@") >/dev/null 2>&1 || got=$?
+  ((got == expected)) || fail "$what: expected $expected, got $got"
+}
+policy 'markers rust'
+in_conf 3 "a marker set named in the config applies" -- sh -c 'echo "running 0 tests"; exit 0'
+policy 'pattern thread panicked in setup'
+in_conf 3 "a pattern named in the config applies" -- sh -c 'echo "thread panicked in setup"; exit 0'
+policy 'allow expected: no tests ran'
+in_conf 0 "a line the config excuses is excused" -- sh -c 'echo "expected: no tests ran"; exit 0'
+policy 'command cargo test'
+in_conf 2 "an unknown key refuses rather than reading as no policy" -- true
+policy 'markers'
+in_conf 2 "a key with no value refuses" -- true
+policy 'markers nosuchset'
+in_conf 2 "a marker set the config names but does not exist refuses" -- true
+rm -f "$conf/tests/t.conf"
+in_conf 0 "a repository with no config is the normal case" -- sh -c 'echo "47 passed"; exit 0'
+# The template is the thing people copy, so it has to parse — an example config that the
+# harness refuses would teach the format wrong on the first try
+status=0
+T_CONFIG=templates/t.conf ./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo "47 passed"; exit 0' \
+  >/dev/null 2>&1 || status=$?
+((status == 0)) || fail "templates/t.conf is not a config t.sh accepts (got $status)"
 
 echo "== run reports the command's own status, where a pipe would report zero"
 # The whole reason this harness exists: `cmd | tail` exits 0 for a suite that just failed
@@ -406,6 +458,12 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   printf 'no frontmatter here\n' >"$work/nofront/SKILL.md"
   ! nested "$work/nofront" || fail "a SKILL.md with no frontmatter passed the gate — nothing would load it"
 
+  echo "== the hard-wrap check is able to fail"
+  copy "$work/wrapped"
+  printf '\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n' \
+    >>"$work/wrapped/README.md"
+  ! nested "$work/wrapped" || fail "a hard-wrapped paragraph passed the gate"
+
   echo "== the reachability check is able to fail: a reference nothing links to"
   copy "$work/orphan"
   : >"$work/orphan/references/nothing-points-here.md"
@@ -440,6 +498,17 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy "$work/unproven"
   printf 'no tests ran\n' >"$work/unproven/markers/invented.txt"
   ! nested "$work/unproven" || fail "a marker set with no fixture passed the gate — its entries are unproven"
+
+  echo "== the unknown-key refusal is able to fail: a config that ignores what it cannot parse"
+  # The tempting form. An ignored key is a policy silently not in effect, which is worse
+  # than no config at all: the repository believes markers are loaded that never were.
+  copy "$work/lenient"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed 's|^      \*) die "config: \$conf:\$n — unknown key.*|      *) : ;;|' t.sh >"$work/lenient/t.sh.new" &&
+    mv "$work/lenient/t.sh.new" "$work/lenient/t.sh"
+  chmod +x "$work/lenient/t.sh"
+  grep -qF '*) : ;;' "$work/lenient/t.sh" || fail "the lenient-config fixture was not planted"
+  ! nested "$work/lenient" || fail "a config that ignores an unknown key passed the gate"
 
   echo "== a refusal written inside a subshell is able to fail"
   # `die` in a $(...) exits the subshell, so the caller carries on with an empty string.

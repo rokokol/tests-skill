@@ -12,21 +12,16 @@
 
 </div>
 
-A suite tells you the code passed. It does not tell you the suite would have noticed if the
-code had stopped working — and that second question is the only one a green run is worth
-anything for
+A suite tells you the code passed. It does not tell you the suite would have noticed if the code had stopped working — and that second question is the only one a green run is worth anything for
 
-This skill teaches an agent to keep the answer honest: a verdict no pipe can swallow, a log
-that gets read even when the status says success, a check watched failing before anyone
-trusts it, a history granular enough to ask *which commit* later, and no compatibility shim
-for a shape that was never released. `t.sh` beside it is the mechanical half, so following
-the rules costs less than not
+This skill teaches an agent to keep the answer honest: a verdict no pipe can swallow, a log that gets read even when the status says success, a check watched failing before anyone trusts it, a history granular enough to ask *which commit* later, and no compatibility shim for a shape that was never released. `t.sh` beside it is the mechanical half, so following the rules costs less than not
 
 ## Contents
 
 - [Install](#install)
 - [The core](#the-core)
 - [The harness](#the-harness)
+- [Markers and policy](#markers-and-policy)
 - [Falsifying a suite](#falsifying-a-suite)
 - [Tests](#tests)
 - [Layout](#layout)
@@ -45,11 +40,9 @@ git clone https://github.com/rokokol/tests-skill ~/.claude/skills/tests
 ```
 
 > [!NOTE]
-> A skill has no version to pin — it is read at whatever revision you have checked out, so
-> `git pull` is the whole upgrade path and the changelog is dated rather than numbered
+> A skill has no version to pin — it is read at whatever revision you have checked out, so `git pull` is the whole upgrade path and the changelog is dated rather than numbered
 
-Then ask Claude Code to write, run or review tests, or reach for it by name. [SKILL.md](SKILL.md)
-carries the rules and `references/` the reasoning behind each
+Then ask Claude Code to write, run or review tests, or reach for it by name. [SKILL.md](SKILL.md) carries the rules and `references/` the reasoning behind each
 
 ## The core
 
@@ -64,16 +57,11 @@ carries the rules and `references/` the reasoning behind each
 | **[No shim for a shape that was never released](references/no-legacy.md)** | Until the version ships, a rename is a rename: the old name, its callers and its tests go in the same commit. Anything that was never a published contract never earns a shim at all |
 | **Keep a running todo list** | One item per red-green-refactor cycle, one for the falsification pass, one per test you quarantine. Small ritual; it is what keeps the second half of a plan from evaporating once the first half goes green |
 
-The core is not negotiable because every rule in it is true in any language. Everything past
-it — [how many layers to keep, how much to fake, what coverage is worth](references/layers.md) —
-is a real choice with a real cost, and the skill states the cost rather than the answer.
-`references/ecosystems/` carries the per-language specifics for pytest, shell, go, rust,
-node, typescript and c++
+The core is not negotiable because every rule in it is true in any language. Everything past it — [how many layers to keep, how much to fake, what coverage is worth](references/layers.md) — is a real choice with a real cost, and the skill states the cost rather than the answer. `references/ecosystems/` carries the per-language specifics for pytest, shell, go, rust, node, typescript and c++
 
 ## The harness
 
-[`t.sh`](t.sh) is the mechanical half — the command is always explicit after `--`, because a
-harness that guesses what your suite is runs the wrong thing on the day it matters:
+[`t.sh`](t.sh) is the mechanical half — the command is always explicit after `--`, because a harness that guesses what your suite is runs the wrong thing on the day it matters:
 
 | Command | What it answers |
 |---|---|
@@ -82,20 +70,15 @@ harness that guesses what your suite is runs the wrong thing on the day it matte
 | `t.sh bisect GOOD -- CMD` | which commit broke it, skipping the ones that cannot answer |
 | `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
 
-`run` is the only place a verdict is formed and the other three call it, so `bisect` cannot
-drift away from `run` about what counts as a failure. It exits with the command's own status,
-except **3** when the command exited 0 while its log said otherwise, and **4** when repeated
-runs disagreed
+`run` is the only place a verdict is formed and the other three call it, so `bisect` cannot drift away from `run` about what counts as a failure. It exits with the command's own status, except **3** when the command exited 0 while its log said otherwise, and **4** when repeated runs disagreed
 
-What counts as "the log said otherwise" is data, not code: [`markers/`](markers/) holds one
-line per way a run lies about itself. `default.txt` always applies and may only contain lines
-a healthy run never prints; anything noisier is a per-ecosystem set opted into with
-`-m rust`, or your own file with `-m tests/markers.txt`. A set that resolves to nothing —
-missing, empty, misspelled — is a refusal to run rather than a quiet pass
+`bisect` speaks git's vocabulary properly: 125 for a commit that cannot answer — one that will not build, has no test runner yet, or whose log says nothing ran — and a crash clamped to "bad" rather than the 139 that would abort the whole session
 
-`bisect` speaks git's vocabulary properly: 125 for a commit that cannot answer — one that
-will not build, has no test runner yet, or whose log says nothing ran — and a crash clamped
-to "bad" rather than the 139 that would abort the whole session
+## Markers and policy
+
+What counts as "the log said otherwise" is data, not code: [`markers/`](markers/) holds one line per way a run lies about itself. `default.txt` always applies and may only contain lines a healthy run never prints; anything noisier is a per-ecosystem set opted into with `-m rust`, or your own file with `-m tests/markers.txt`. A set that resolves to nothing — missing, empty, misspelled — is a refusal to run rather than a quiet pass
+
+A repository declares its own policy once in `tests/t.conf` ([template](templates/t.conf)) rather than retyping flags — which marker sets apply, which lines are excused, where logs go. It is read from the current directory only, and it **never carries the command**: what runs stays after `--`, in the line you typed, so a green run's subject is always visible where the verdict is. An unknown key or a missing marker set stops the run and names the line, because a typo that is skipped leaves you believing in markers that were never loaded
 
 ## Falsifying a suite
 
@@ -103,23 +86,14 @@ to "bad" rather than the 139 that would abort the whole session
 t.sh falsify -b 'cargo build --workspace' -- cargo test --workspace
 ```
 
-It applies, one at a time, edits written by hand in the repository's own `tests/defects.sh`
-and requires the suite to notice. **Nothing is generated** — tools that invent mutants mostly
-produce code that will not compile, and a compiler error is not a test noticing anything
+It applies, one at a time, edits written by hand in the repository's own `tests/defects.sh` and requires the suite to notice. **Nothing is generated** — tools that invent mutants mostly produce code that will not compile, and a compiler error is not a test noticing anything
 
-Four verdicts, and the distinctions are the point: `caught`, `SURVIVED` (printing the entry's
-consequence sentence, which names what nobody checks), `stale` (the find text no longer
-matches exactly once, so the list has drifted from its code) and `unusable` (the edit stopped
-it building, so the tests were never asked — the verdict that keeps a compiled language's
-report honest)
+Four verdicts, and the distinctions are the point: `caught`, `SURVIVED` (printing the entry's consequence sentence, which names what nobody checks), `stale` (the find text no longer matches exactly once, so the list has drifted from its code) and `unusable` (the edit stopped it building, so the tests were never asked — the verdict that keeps a compiled language's report honest)
 
-It refuses to start on a dirty tree or against an already-red suite, holds the original in
-memory, restores it in a trap that covers an interrupt, and compares byte for byte afterwards
+It refuses to start on a dirty tree or against an already-red suite, holds the original in memory, restores it in a trap that covers an interrupt, and compares byte for byte afterwards
 
 > [!IMPORTANT]
-> Copying a defect list proves nothing. The mechanism travels, the knowledge does not — a
-> falsifier that has only ever printed `caught` may simply be matching nothing. Run it, watch
-> something survive, and only then believe the green
+> Copying a defect list proves nothing. The mechanism travels, the knowledge does not — a falsifier that has only ever printed `caught` may simply be matching nothing. Run it, watch something survive, and only then believe the green
 
 ## Tests
 
@@ -127,18 +101,9 @@ memory, restores it in a trap that covers an interrupt, and compares byte for by
 nix develop -c ./check.sh
 ```
 
-Lints what the skill ships, checks that SKILL.md is loadable and that every reference, link
-and heading anchor resolves — then proves each of those able to fail against a deliberately
-broken copy. The marker table is read *out of* `t.sh` rather than spelled a second time, and
-every entry must catch its fixture and stay silent on a healthy one, so a dead marker cannot
-sit there looking like a guard
+Lints what the skill ships, checks that SKILL.md is loadable and that every reference, link and heading anchor resolves — then proves each of those able to fail against a deliberately broken copy. The marker files are read by the gate exactly as `run` reads them, and every entry must catch a line in its own fixture while no default one may fire on a healthy log, so a dead marker cannot sit there looking like a guard
 
-The behavioural halves are proven the same way: a command exiting 7 through a pipe must still
-be reported 7; a green run whose log says nothing was collected must not be a pass; `bisect`
-must name the known culprit across a history containing a commit that will not build; and
-`falsify` must return `caught`, `SURVIVED`, `stale` and `unusable` on a fixture built to
-produce exactly one of each. Every one of them was watched failing first — three of them
-found real bugs in this repository while being written
+The behavioural halves are proven the same way: a command exiting 7 through a pipe must still be reported 7; a green run whose log says nothing was collected must not be a pass; a config with an unknown key must refuse rather than skip it; `bisect` must name the known culprit across a history containing a commit that will not build; and `falsify` must return `caught`, `SURVIVED`, `stale` and `unusable` on a fixture built to produce exactly one of each. Every one of them was watched failing first — several found real bugs in this repository while being written
 
 ## Layout
 
@@ -147,12 +112,9 @@ SKILL.md              the rules an agent reads
 t.sh                  the harness: run / flaky / bisect / falsify
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, plus ecosystems/ for the per-language specifics
-templates/defects.sh  the per-repo defect list falsify reads, EXAMPLE markers only
+templates/            defects.sh for falsify, t.conf for a repository's own policy
 check.sh              the self-testing gate
 tests/fixtures/       the known-bad inputs the checks must catch
 ```
 
-CI doctrine — what may gate a pull request, pinning, badges, dependency cascades — is not
-duplicated here; it lives in the [ci](https://github.com/rokokol/ci-skill) skill. What may go
-in a commit *message* lives in
-[ai-commit-trailers](https://github.com/rokokol/ai-commit-trailers-skill)
+CI doctrine — what may gate a pull request, pinning, badges, dependency cascades — is not duplicated here; it lives in the [ci](https://github.com/rokokol/ci-skill) skill. What may go in a commit *message* lives in [ai-commit-trailers](https://github.com/rokokol/ai-commit-trailers-skill)
