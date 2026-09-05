@@ -16,6 +16,9 @@ cd "$HERE"
 # drifted list lies about what was checked.
 scripts=(t.sh check.sh templates/defects.sh)
 
+# The skill's own name, as the frontmatter, the readme and the symlink all spell it
+skill_name=tests
+
 fail() {
   echo "check: $1" >&2
   exit 1
@@ -28,6 +31,52 @@ echo "== the scripts parse and lint"
 for s in "${scripts[@]}"; do bash -n "$s"; done
 shellcheck "${scripts[@]}"
 shfmt -d -i 2 -ci "${scripts[@]}"
+
+echo "== SKILL.md carries the frontmatter an agent loads it by"
+# A skill whose frontmatter is malformed or renamed is simply never loaded, and nothing
+# says so: the agent just never reaches for it.
+head -1 SKILL.md | grep -qx -- '---' || fail "SKILL.md does not open with a frontmatter block"
+front=$(sed -n '2,/^---$/p' SKILL.md)
+for key in name description license; do
+  grep -q "^$key:" <<<"$front" || fail "SKILL.md frontmatter has no $key"
+done
+grep -qx "name: $skill_name" <<<"$front" ||
+  fail "SKILL.md does not call this skill '$skill_name', which is what the readme and the symlink call it"
+
+echo "== every reference is reachable, and every link and anchor resolves"
+# A reference nothing links to is never loaded, so it rots unread while reading as
+# maintained. Reachability is transitive: SKILL.md may delegate to a reference that links on.
+docs=(SKILL.md README.md)
+while IFS= read -r ref; do docs+=("$ref"); done < <(find references -type f -name '*.md' | sort)
+((${#docs[@]} > 2)) || fail "no references were found — the extractor is broken"
+for ref in "${docs[@]:2}"; do
+  base=$(basename "$ref")
+  grep -qrF "$base" SKILL.md references/ ||
+    fail "$ref exists but nothing links to it — it will rot unread"
+done
+
+# Every relative link resolves to a file that exists, and every #anchor to a heading in it
+for doc in "${docs[@]}"; do
+  dir=$(dirname "$doc")
+  while IFS= read -r link; do
+    target="${link%%#*}"
+    anchor="${link#*#}"
+    [[ "$anchor" == "$link" ]] && anchor=""
+    if [[ -n "$target" ]]; then
+      path="$dir/$target"
+      [[ -e "$path" ]] || fail "$doc links to $target, which does not exist"
+    else
+      path="$doc"
+    fi
+    [[ -n "$anchor" && -f "$path" ]] || continue
+    # GitHub's anchor form: lowercase, spaces to dashes, punctuation dropped
+    if ! sed -n 's/^#\{1,6\} *//p' "$path" |
+      tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-\n' |
+      grep -qx -- "$anchor"; then
+      fail "$doc links to #$anchor in $path, where no heading has that anchor"
+    fi
+  done < <(grep -o '](\([^)]*\))' "$doc" | sed 's/^](//; s/)$//' | grep -v '^[a-z]*://')
+done
 
 echo "== every lie marker catches its fixture, and none of them cries on a healthy run"
 # The markers are read OUT of t.sh rather than spelled a second time here: two copies of
@@ -291,11 +340,32 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy() {
     local dest="$1"
     mkdir -p "$dest/tests/fixtures" "$dest/templates"
-    cp t.sh check.sh "$dest/"
+    cp t.sh check.sh SKILL.md README.md "$dest/"
+    cp -r references "$dest/"
     cp templates/defects.sh "$dest/templates/"
     cp tests/fixtures/*.log "$dest/tests/fixtures/"
   }
   nested() { (cd "$1" && T_CHECK_NESTED=1 ./check.sh >/dev/null 2>&1); }
+
+  echo "== the frontmatter check is able to fail"
+  copy "$work/nofront"
+  printf 'no frontmatter here\n' >"$work/nofront/SKILL.md"
+  ! nested "$work/nofront" || fail "a SKILL.md with no frontmatter passed the gate — nothing would load it"
+
+  echo "== the reachability check is able to fail: a reference nothing links to"
+  copy "$work/orphan"
+  : >"$work/orphan/references/nothing-points-here.md"
+  ! nested "$work/orphan" || fail "a reference nothing links to passed the gate"
+
+  echo "== the link check is able to fail: a link to a file that is not there"
+  copy "$work/deadlink"
+  printf '\nSee [the missing one](references/not-a-file.md).\n' >>"$work/deadlink/SKILL.md"
+  ! nested "$work/deadlink" || fail "a link to a missing file passed the gate"
+
+  echo "== the anchor check is able to fail: a link to a heading that does not exist"
+  copy "$work/deadanchor"
+  printf '\nSee [nowhere](references/verdict.md#no-such-heading).\n' >>"$work/deadanchor/SKILL.md"
+  ! nested "$work/deadanchor" || fail "a link to a nonexistent heading passed the gate"
 
   echo "== the marker check is able to fail: a dead entry"
   copy "$work/dead"
