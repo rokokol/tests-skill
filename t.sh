@@ -777,7 +777,10 @@ cmd_falsify() {
     fi
 
     mutated="${content//"$find"/"$replace"}"
-    printf '%s' "$mutated" >"$file"
+    # Checked, because a write that fails leaves the pristine code in place, the suite
+    # then passes against it, and that would be reported as a survivor: a read-only file
+    # once made a guard the suite does cover read as one nobody checks
+    printf '%s' "$mutated" >"$file" || fatal "falsify: cannot write $file — the tree is untouched, and nothing was measured"
     verdict=$(suite_verdict "$@")
     printf '%s' "$content" >"$file"
 

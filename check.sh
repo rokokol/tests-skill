@@ -614,6 +614,21 @@ cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
   fail "falsify did not restore impl.sh byte for byte"
 git -C "$fal" diff --quiet || fail "falsify left the working tree dirty"
 
+echo "== a mutant that could not be written is not a survivor"
+# A write that fails leaves the pristine code in place; the suite passes against it, and
+# that used to be reported as SURVIVED for a guard the suite does cover. git tracks only
+# the executable bit, so the read-only file still counts as a clean tree.
+if [[ $EUID -eq 0 ]]; then
+  echo "   skipped: running as root, which can write a read-only file"
+else
+  chmod a-w "$fal/impl.sh"
+  status=0
+  fal_out=$(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
+  chmod u+w "$fal/impl.sh"
+  ((status == 70)) || fail "falsify measured a mutant it could not write (got $status):"$'\n'"$fal_out"
+  ! grep -q 'SURVIVED' <<<"$fal_out" || fail "falsify credited a read-only source file with a survivor"
+fi
+
 echo "== falsify refuses the situations where its answer would be meaningless"
 status=0
 (cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh -c 'exit 1') >/dev/null 2>&1 || status=$?
@@ -821,6 +836,18 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/badallow/t.sh"
   ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
   catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
+
+  echo "== the unwritten-mutant check is able to fail: a write taken on trust"
+  copy "$work/unwritten"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed 's/ || fatal "falsify: cannot write \$file.*$//' t.sh >"$work/unwritten/t.sh.new" && mv "$work/unwritten/t.sh.new" "$work/unwritten/t.sh"
+  chmod +x "$work/unwritten/t.sh"
+  ! grep -qF 'falsify: cannot write' "$work/unwritten/t.sh" || fail "the unwritten-mutant fixture was not planted"
+  if [[ $EUID -eq 0 ]]; then
+    echo "   skipped: running as root, where the check itself is skipped"
+  else
+    catches "$work/unwritten" "could not write" "a falsify that does not check its write"
+  fi
 
   echo "== the inconclusive-bisect check is able to fail: git's surrender read as success"
   copy "$work/surrender"
