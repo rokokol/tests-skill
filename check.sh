@@ -634,6 +634,22 @@ DEFECTS
   (cd "$fal" && tsh falsify -l "$work/logs" clamp -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 0)) || fail "falsify exited $status on a list whose only defect is caught (want 0)"
 
+  echo "== on a GitHub runner a finding is also an annotation on the file and line"
+  # A finding next to the code is read by whoever is about to merge it; in a log, by
+  # whoever opens the log. The variable is cleared for the negative, because the gate
+  # itself runs on such a runner.
+  status=0
+  gh_out=$(cd "$fal" && GITHUB_ACTIONS=true tsh falsify -b 'sh -n impl.sh' -l "$work/logs" --out "$work/fo-gh" -- sh suite.sh 2>&1) || status=$?
+  grep -qF '::error file=impl.sh,line=3,title=falsify::SURVIVED strip/spaces: a name keeps the spaces' <<<"$gh_out" ||
+    fail "falsify on a GitHub runner did not annotate the survivor:"$'\n'"$gh_out"
+  grep -qF '::warning file=impl.sh,title=falsify::stale gone/drifted' <<<"$gh_out" ||
+    fail "falsify on a GitHub runner did not annotate the stale entry:"$'\n'"$gh_out"
+  grep -qF '::warning file=impl.sh,line=2,title=falsify::unusable syntax/broken' <<<"$gh_out" ||
+    fail "falsify on a GitHub runner did not annotate the unusable entry:"$'\n'"$gh_out"
+  status=0
+  plain_out=$(cd "$fal" && GITHUB_ACTIONS='' tsh falsify -b 'sh -n impl.sh' -l "$work/logs" --out "$work/fo-gh" -- sh suite.sh 2>&1) || status=$?
+  ! grep -q '^::' <<<"$plain_out" || fail "falsify printed GitHub annotations off a GitHub runner"
+
   echo "== a defect that never lets the suite finish is timed out, not caught"
   # A neutered guard is often a loop that no longer ends. Without a deadline it hung the
   # whole falsification; credited as caught it would reward the suite for a hang.
@@ -916,6 +932,8 @@ check_proofs() {
       sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
+    plant behaviour unannotated "did not annotate the survivor" "a falsify that keeps its findings out of the diff" \
+      sed t.sh 's/^        annotate error "\$file" "\$line" "SURVIVED \$name: \$why"$/        : # planted/' '# planted'
     plant behaviour unexpected "was reported as a survivor" "a falsify that ignores a declared exception" \
       sed t.sh 's/^    if \[\[ -n "\$expect" \]\]; then$/    if false; then # planted/' '# planted'
     plant behaviour nowhere "where the edit is" "a falsify that names a survivor without its line" \
@@ -986,8 +1004,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=22 ;;
-    all) want_planted=34 ;;
+    behaviour) want_planted=23 ;;
+    all) want_planted=35 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

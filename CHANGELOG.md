@@ -27,6 +27,7 @@ section for work that has landed but not shipped would never close
 
 ### Added
 
+- on a GitHub runner every `falsify` finding is also an annotation on the file and line, an error for a survivor and a warning for a stale, unusable or timed-out entry, so it shows in the diff of the pull request. A finding in a log is read by whoever opens the log; one next to the code is read by whoever is about to merge it
 - **a defect nothing can catch is declared where it is written**: `defect ... expect survived "reason"`. Some edits change the code without changing anything a caller can observe, and a list that has to leave them out loses the record that somebody looked. Declared, the defect is reported `expected` rather than `SURVIVED`, and the day the suite does catch it the declaration is reported `stale`, exit 87, so an exception cannot outlive its truth. On the line and not in a separate list, because an exception kept elsewhere is one nobody rereads
 - a `SURVIVED` line is followed by where the edit was and what it was, `FILE:LINE  - before` and `+ after`, because a survivor is only actionable next to the code it names; `results.json` carries the line too
 - `falsify` refuses a defect aimed at a test, vendored or generated file, `tests/`, `*_test.*`, `*.spec.*`, `vendor/`, `node_modules/`, `*_pb2.py` and the like: a test file is executed, so an edit there is "caught" by whatever it breaks and reads as coverage the suite does not have. `--any-file` is for a list that knows better

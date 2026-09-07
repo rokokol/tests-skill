@@ -794,6 +794,18 @@ cmd_falsify() {
     local n="$1"
     printf '%s' "${n//\//-}"
   }
+  # On a GitHub runner a finding also becomes an annotation on the file and line, in the
+  # diff of the pull request. A finding in a log is read by whoever opens the log; one
+  # next to the code is read by whoever is about to merge it — which is the only place a
+  # survivor has ever changed what got written.
+  annotate() { # annotate LEVEL FILE LINE TEXT
+    [[ -n "${GITHUB_ACTIONS:-}" ]] || return 0
+    if [[ -n "$3" ]]; then
+      printf '::%s file=%s,line=%s,title=falsify::%s\n' "$1" "$2" "$3" "$4"
+    else
+      printf '::%s file=%s,title=falsify::%s\n' "$1" "$2" "$4"
+    fi
+  }
 
   # A dirty tree makes an interrupted restore indistinguishable from your own edits, and
   # this is a command that edits your source on purpose
@@ -969,6 +981,7 @@ cmd_falsify() {
       # Not guessed at: a list that no longer describes the code has to say so, or it
       # quietly stops testing the thing it was written for
       printf 'stale     %s: its find text matches %s times in %s, not once\n' "$name" "$occurrences" "$file"
+      annotate warning "$file" "" "stale $name: its find text matches $occurrences times, not once"
       stale+=("$name")
       record stale "$name" "$file" "" "$why"
       continue
@@ -1009,6 +1022,7 @@ cmd_falsify() {
         ;;
       disproved)
         printf 'stale     %s: declared as one nothing can catch, and the suite caught it — drop the expectation\n' "$name"
+        annotate warning "$file" "$line" "stale $name: declared as one nothing can catch, and the suite caught it"
         stale+=("$name")
         VERDICT=stale
         ;;
@@ -1018,6 +1032,7 @@ cmd_falsify() {
         # for the shapes worth writing
         printf '          %s:%s  - %s\n' "$file" "$line" "${find%%$'\n'*}"
         printf '          %s:%s  + %s\n' "$file" "$line" "${replace%%$'\n'*}"
+        annotate error "$file" "$line" "SURVIVED $name: $why"
         survived+=("$name")
         ;;
       unusable)
@@ -1025,6 +1040,7 @@ cmd_falsify() {
         # is how a suite gets credit for coverage it does not have — and calling it
         # SURVIVED, as this once did, blamed the suite for an edit that never reached it.
         printf 'unusable  %s: the edit stopped it building, so the tests were never asked\n' "$name"
+        annotate warning "$file" "$line" "unusable $name: the edit stopped it building, so the tests were never asked"
         unusable+=("$name")
         ;;
       timedout)
@@ -1032,6 +1048,7 @@ cmd_falsify() {
         # would blame it for an edit that never let it answer. Like stale, a fault of the
         # entry: the edit most likely made a loop that does not end.
         printf 'TIMEDOUT  %s: the suite did not finish within %ss, so it never gave a verdict\n' "$name" "$deadline"
+        annotate warning "$file" "$line" "TIMEDOUT $name: the suite did not finish within ${deadline}s"
         timedout+=("$name")
         ;;
       # No verdict is a suite run that ended without one — killed, most likely. Silently
