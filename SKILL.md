@@ -32,7 +32,7 @@ Both are the core applied at a different moment; say which one you are in.
 
 These are choices, and [references/layers.md](references/layers.md) gives the criterion rather than the verdict: how many layers of test to keep and what each can and cannot answer; how much to replace with fakes and what a fake stops proving; whether to keep golden files; what belongs in the gate and what belongs in a suite run by hand.
 
-`references/ecosystems/` carries the per-language specifics — the flags that stop a run lying quietly, that language's own shapes of "green that lies", its determinism traps, and what makes a usable defect entry there: [pytest](references/ecosystems/pytest.md) · [shell and bats](references/ecosystems/shell.md) · [go](references/ecosystems/go.md) · [rust](references/ecosystems/rust.md) · [node](references/ecosystems/node.md) · [typescript](references/ecosystems/typescript.md) · [c++](references/ecosystems/cpp.md)
+`references/ecosystems/` carries the per-language specifics — the flags that stop a run lying quietly, that language's own shapes of "green that lies", its determinism traps, and what makes a usable defect entry there: [pytest](references/ecosystems/pytest.md) · [shell and bats](references/ecosystems/shell.md) · [go](references/ecosystems/go.md) · [rust](references/ecosystems/rust.md) · [node](references/ecosystems/node.md) · [typescript](references/ecosystems/typescript.md) · [c++](references/ecosystems/cpp.md) · [jvm](references/ecosystems/jvm.md) · [.net](references/ecosystems/dotnet.md) · [php](references/ecosystems/php.md) · [playwright and end-to-end](references/ecosystems/playwright.md)
 
 ## The harness
 

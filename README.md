@@ -57,7 +57,7 @@ Then ask Claude Code to write, run or review tests, or reach for it by name. [SK
 | **[No shim for a shape that was never released](references/no-legacy.md)** | Until the version ships, a rename is a rename: the old name, its callers and its tests go in the same commit. Anything that was never a published contract never earns a shim at all |
 | **Keep a running todo list** | One item per red-green-refactor cycle, one for the falsification pass, one per test you quarantine. Small ritual; it is what keeps the second half of a plan from evaporating once the first half goes green |
 
-The core is not negotiable because every rule in it is true in any language. Everything past it — [how many layers to keep, how much to fake, what coverage is worth](references/layers.md) — is a real choice with a real cost, and the skill states the cost rather than the answer. `references/ecosystems/` carries the per-language specifics for pytest, shell, go, rust, node, typescript and c++
+The core is not negotiable because every rule in it is true in any language. Everything past it — [how many layers to keep, how much to fake, what coverage is worth](references/layers.md) — is a real choice with a real cost, and the skill states the cost rather than the answer. `references/ecosystems/` carries the per-language specifics for pytest, shell, go, rust, node, typescript, c++, the jvm, .net, php, and playwright with the rest of end-to-end
 
 ## The harness
 
