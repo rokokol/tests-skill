@@ -791,6 +791,14 @@ DEFECTS
   status=0
   (cd "$fal" && tsh falsify -d tests/expected-bad.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "falsify accepted 'expect caught', which is not a thing (got $status)"
+  # The template is the thing people copy, so every form it shows has to parse: falsify
+  # must get as far as the files it names, which this fixture does not have
+  status=0
+  tpl_out=$(cd "$fal" && tsh falsify -d "$HERE/templates/defects.sh" -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
+  ((status == 64)) || fail "templates/defects.sh is not a list falsify accepts (got $status):"$'\n'"$tpl_out"
+  grep -q 'which cannot be read' <<<"$tpl_out" ||
+    fail "templates/defects.sh was refused before its entries were read:"$'\n'"$tpl_out"
+  grep -q "expect survived '" templates/defects.sh || fail "templates/defects.sh shows no declared exception"
   # A defect in a test file is "caught" by whatever it breaks and reads as coverage
   printf 'helper=1\n' >"$fal/tests/helper.sh"
   git -C "$fal" add tests/helper.sh && git -C "$fal" commit -q -m "a helper under tests/"
