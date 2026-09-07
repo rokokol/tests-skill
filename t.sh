@@ -260,7 +260,11 @@ cmd_run() {
   # reports tail — both are 0 for a suite that just failed, which is how a red run
   # gets committed as a green one.
   "$@" 2>&1 | tee "$log"
-  local status=${PIPESTATUS[0]}
+  # Copied whole, in the one command that still can: bash resets PIPESTATUS after every
+  # simple command, and an assignment or a `local` is one. A second reference on the next
+  # line would already read empty.
+  local -a ps=("${PIPESTATUS[@]}")
+  local status=${ps[0]}
 
   local hits
   hits=$(scan_log "$log" ${extra[@]+"${extra[@]}"}) || :

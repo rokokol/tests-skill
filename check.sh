@@ -676,10 +676,10 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   # would prove nothing.
   copy "$work/blind"
   # shellcheck disable=SC2016  # the $? is the defect being planted, not an expansion
-  sed -e 's/^set -uo pipefail$/set -u/' -e 's/local status=${PIPESTATUS\[0\]}/local status=$?/' \
+  sed -e 's/^set -uo pipefail$/set -u/' -e 's/local -a ps=("${PIPESTATUS\[@\]}")/local -a ps=($?)/' \
     t.sh >"$work/blind/t.sh.new" && mv "$work/blind/t.sh.new" "$work/blind/t.sh"
   chmod +x "$work/blind/t.sh"
-  grep -qF 'local status=$?' "$work/blind/t.sh" || fail "the blind-status fixture was not planted"
+  grep -qF 'local -a ps=($?)' "$work/blind/t.sh" || fail "the blind-status fixture was not planted"
   catches "$work/blind" "for a command that exited 7" "a run reading tee's status"
 
   echo "== the help-drift check is able to fail: a subcommand the help never mentions"
