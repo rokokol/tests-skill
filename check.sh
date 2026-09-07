@@ -101,22 +101,31 @@ check_lint() {
   # relative link and heading anchor. It falsifies itself on copies of the repository.
   ./check-skill.sh -n "$skill_name" .
 
-  echo "== no paragraph in the readme is hard-wrapped"
+  echo "== no paragraph in any document is hard-wrapped"
   # GitHub soft-wraps, so a manual break inside a paragraph only means a one-word edit
-  # reflows every line after it. This is the one rule of the create-readme skill that a
-  # reader cannot see and a script can decide; the rest of that skill's rules live with it.
+  # reflows every line after it. The create-readme skill's rule for the readme, applied to
+  # every document here: a reference is read by an agent and by a person on GitHub alike,
+  # and the diff of a one-word edit should be one line in either.
   hard_wrapped() { # hard_wrapped FILE -> prints the offending line numbers
     awk '
+    # the frontmatter is one key per line by definition, not prose
+    NR == 1 && /^---$/ { front = 1; next }
+    front { if (/^---$/) front = 0; next }
     /^```/ { fence = !fence; prev = 0; next }
     fence { next }
     # blank, heading, table, list, quote, html, badge, link or indented line: not prose
-    /^[[:space:]]*$/ || /^[#|>< ]/ || /^[-*+]/ || /^!\[/ || /^\[/ { prev = 0; next }
+    /^[[:space:]]*$/ || /^[#|>< ]/ || /^[-*+]/ || /^[0-9]+\. / || /^!\[/ || /^\[/ { prev = 0; next }
     { if (prev) print NR; prev = 1 }
   ' "$1"
   }
-  wrapped=$(hard_wrapped README.md)
-  [[ -z "$wrapped" ]] ||
-    fail "README.md hard-wraps a paragraph at line(s): $(tr '\n' ' ' <<<"$wrapped")— one paragraph is one line"
+  docs=(README.md SKILL.md CHANGELOG.md)
+  while IFS= read -r f; do docs+=("$f"); done < <(find references -type f -name '*.md' | sort)
+  ((${#docs[@]} > 3)) || fail "no references were found — the extractor is broken"
+  for doc in "${docs[@]}"; do
+    wrapped=$(hard_wrapped "$doc")
+    [[ -z "$wrapped" ]] ||
+      fail "$doc hard-wraps a paragraph at line(s): $(tr '\n' ' ' <<<"$wrapped")— one paragraph is one line"
+  done
 
   echo "== every t.sh example in the docs uses flags that subcommand actually accepts"
   # A documented command is a hand-written mirror of the parser, and mirrors drift. This one
@@ -992,6 +1001,8 @@ check_proofs() {
       write SKILL.md $'no frontmatter here\n'
     plant lint wrapped "hard-wraps a paragraph" "a hard-wrapped paragraph" \
       append README.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
+    plant lint wrapped-reference "hard-wraps a paragraph" "a hard-wrapped paragraph in a reference" \
+      append references/verdict.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
     plant lint orphan "reaches it" "a reference nothing links to" \
       write references/nothing-points-here.md ''
     plant lint deadlink "which does not exist" "a link to a missing file" \
@@ -1120,9 +1131,9 @@ check_proofs() {
   # The table above is the proof; a table that lost its rows would prove nothing while
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
-    lint) want_planted=12 ;;
+    lint) want_planted=13 ;;
     behaviour) want_planted=26 ;;
-    all) want_planted=38 ;;
+    all) want_planted=39 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
