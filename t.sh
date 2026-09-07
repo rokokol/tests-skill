@@ -744,28 +744,29 @@ cmd_falsify() {
   rm -f "$out"/caught.txt "$out"/survived.txt "$out"/stale.txt "$out"/unusable.txt "$out"/timeout.txt "$out"/results.json
   rm -rf "$out/logs"
   mkdir -p "$out/logs" || fatal "falsify: cannot create $out"
-  local -a RES_NAME=() RES_FILE=() RES_VERDICT=() RES_WHY=()
+  local -a RES_NAME=() RES_FILE=() RES_LINE=() RES_VERDICT=() RES_WHY=()
   write_results() {
     local i first=1
     {
       printf '{\n  "deadline": %s,\n  "defects": [' "${deadline:-null}"
       for i in "${!RES_NAME[@]}"; do
         if ((first)); then first=0; else printf ','; fi
-        printf '\n    {"name": %s, "file": %s, "verdict": %s, "consequence": %s}' \
-          "$(json_str "${RES_NAME[$i]}")" "$(json_str "${RES_FILE[$i]}")" \
+        printf '\n    {"name": %s, "file": %s, "line": %s, "verdict": %s, "consequence": %s}' \
+          "$(json_str "${RES_NAME[$i]}")" "$(json_str "${RES_FILE[$i]}")" "${RES_LINE[$i]:-null}" \
           "$(json_str "${RES_VERDICT[$i]}")" "$(json_str "${RES_WHY[$i]}")"
       done
       printf '\n  ]\n}\n'
     } >"$out/results.json.new" && mv "$out/results.json.new" "$out/results.json"
   }
-  record() { # record VERDICT NAME FILE CONSEQUENCE
+  record() { # record VERDICT NAME FILE LINE CONSEQUENCE
     local list="$1"
     [[ "$list" != timedout ]] || list=timeout
     printf '%s\n' "$2" >>"$out/$list.txt"
     RES_NAME+=("$2")
     RES_FILE+=("$3")
+    RES_LINE+=("$4")
     RES_VERDICT+=("$1")
-    RES_WHY+=("$4")
+    RES_WHY+=("$5")
     write_results
   }
   log_name() { # log_name DEFECT-NAME -> a file name: the slashes in a name become dashes
@@ -929,7 +930,7 @@ cmd_falsify() {
     *) fatal "falsify: the baseline run ended without a verdict — the harness could not run the suite (see $logdir)" ;;
   esac
 
-  local i name file find replace why content mutated occurrences pristine
+  local name file find replace why content mutated occurrences pristine line
   local -a caught=() survived=() stale=() unusable=() timedout=() ran=()
   for i in "${!DEF_NAME[@]}"; do
     name="${DEF_NAME[$i]}"
@@ -947,9 +948,12 @@ cmd_falsify() {
       # quietly stops testing the thing it was written for
       printf 'stale     %s: its find text matches %s times in %s, not once\n' "$name" "$occurrences" "$file"
       stale+=("$name")
-      record stale "$name" "$file" "$why"
+      record stale "$name" "$file" "" "$why"
       continue
     fi
+    # The line the find text starts on, because a survivor is only actionable next to the
+    # code it names: how many newlines come before it, plus one
+    line=$(($(printf '%s' "${content%%"$find"*}" | wc -l) + 1))
 
     # Cut around the one occurrence rather than ${content//"$find"/"$replace"}: bash 3.2
     # keeps the quotes around the replacement as literal text, so every mutant on macOS
@@ -970,6 +974,10 @@ cmd_falsify() {
         ;;
       survived)
         printf 'SURVIVED  %s: %s\n' "$name" "$why"
+        # Where, and what the edit was — the first line of each, which is the whole edit
+        # for the shapes worth writing
+        printf '          %s:%s  - %s\n' "$file" "$line" "${find%%$'\n'*}"
+        printf '          %s:%s  + %s\n' "$file" "$line" "${replace%%$'\n'*}"
         survived+=("$name")
         ;;
       unusable)
@@ -990,7 +998,7 @@ cmd_falsify() {
       # matching nothing here is how a defect once vanished from the report.
       *) fatal "falsify: no verdict for $name — the suite run ended without one" ;;
     esac
-    record "$VERDICT" "$name" "$file" "$why"
+    record "$VERDICT" "$name" "$file" "$line" "$why"
   done
 
   restore_all

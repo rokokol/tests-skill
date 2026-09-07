@@ -589,6 +589,10 @@ DEFECTS
     fail "falsify did not credit the suite for the guard it does cover:"$'\n'"$fal_out"
   grep -q '^SURVIVED  strip/spaces' <<<"$fal_out" ||
     fail "falsify did not report the guard nothing checks:"$'\n'"$fal_out"
+  # A survivor is only actionable next to the code it names
+  if ! grep -qF "impl.sh:3  - tr -d ' '" <<<"$fal_out" || ! grep -qF "impl.sh:3  + cat" <<<"$fal_out"; then
+    fail "falsify reported the survivor without saying where the edit is and what it was:"$'\n'"$fal_out"
+  fi
   grep -q '^stale     gone/drifted' <<<"$fal_out" ||
     fail "falsify guessed at a find text that no longer matches instead of reporting it stale:"$'\n'"$fal_out"
   # The one the user has to be able to trust: an edit that only breaks the build is not
@@ -608,6 +612,8 @@ DEFECTS
     fail "results.json does not carry exactly one survivor"
   grep -q '"consequence": "a name keeps the spaces' "$fo/results.json" ||
     fail "results.json does not carry the consequence sentence"
+  grep -q '"file": "impl.sh", "line": 3, "verdict": "survived"' "$fo/results.json" ||
+    fail "results.json does not carry the survivor's file and line"
 
   echo "== falsify puts the source back byte for byte"
   cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
@@ -893,6 +899,8 @@ check_proofs() {
       sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
+    plant behaviour nowhere "where the edit is" "a falsify that names a survivor without its line" \
+      drop t.sh '  - %s\n'
     plant behaviour anyfile "aimed at a test file" "a falsify that edits test files" \
       sed t.sh 's/^      looks_like_test_file "\${DEF_FILE\[\$i\]}" || continue$/      continue # planted/' '# planted'
     plant behaviour nodeadline "nothing timed it out" "a falsify with no deadline" \
@@ -959,8 +967,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=20 ;;
-    all) want_planted=32 ;;
+    behaviour) want_planted=21 ;;
+    all) want_planted=33 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
