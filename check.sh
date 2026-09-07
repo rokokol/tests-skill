@@ -490,10 +490,20 @@ probe 1 "builds and fails" -b true -- false
 probe 125 "does not build" -b false -- true
 probe 125 "has no test runner (exit 127)" -- sh -c 'exit 127'
 probe 125 "runs nothing while exiting 0" -- sh -c 'echo "collected 0 items"; exit 0'
+# The command's own low numbers are its own: make exits 2 on any failure, and for a while
+# the probe took 2 for "the harness could not run it" and skipped every failing commit
+probe 1 "fails the way make does, with exit 2" -- sh -c 'exit 2'
+probe 1 "fails with exit 3" -- sh -c 'exit 3'
+probe 125 "has a runner that is not executable (exit 126)" -- sh -c 'exit 126'
+probe 125 "cannot be run by the harness at all" -m no-such-set -- true
 # 128+n means killed by a signal, and git bisect ABORTS on anything above 127 rather than
-# treating it as a verdict. Clamping it to "bad" is what keeps a crashing commit from
-# ending the session.
+# treating it as a verdict. A crash is the code at this commit misbehaving, so it is
+# clamped to "bad" and the session goes on; a person stopping the run is not evidence
+# about the commit, so it is passed through and the session ends, which is what Ctrl-C
+# is for.
 probe 1 "is killed by a signal" -- sh -c 'kill -SEGV $$'
+probe 130 "is interrupted by the user" -- sh -c 'kill -INT $$'
+probe 143 "is terminated from outside" -- sh -c 'kill -TERM $$'
 
 echo "== bisect refuses to start on a working tree it would trample"
 # A TRACKED file has to change: `passes` is deleted at HEAD, so writing it would only add
@@ -748,11 +758,10 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   echo "== the bisect status mapping is able to fail: statuses passed through raw"
   copy "$work/raw"
   # shellcheck disable=SC2016  # the $status is the defect being planted, not an expansion
-  sed 's/^    \*) return 1 ;;$/    *) return "$status" ;;/' t.sh >"$work/raw/t.sh.new" &&
+  sed 's/^        \*) return 1 ;;$/        *) return "$status" ;; # planted/' t.sh >"$work/raw/t.sh.new" &&
     mv "$work/raw/t.sh.new" "$work/raw/t.sh"
   chmod +x "$work/raw/t.sh"
-  # shellcheck disable=SC2016  # $status is t.sh's own source text, not an expansion here
-  grep -qF 'return "$status" ;;' "$work/raw/t.sh" || fail "the raw-status fixture was not planted"
+  grep -qF '# planted' "$work/raw/t.sh" || fail "the raw-status fixture was not planted"
   catches "$work/raw" "should be 1 to git bisect" "a probe returning a raw signal status"
 
   echo "== the restore check is able to fail: a slurp that loses the trailing newline"

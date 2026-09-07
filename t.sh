@@ -439,19 +439,23 @@ cmd_flaky() {
   return 86
 }
 
-# The verdict on ONE commit, in the vocabulary `git bisect run` speaks:
+# The verdict on ONE commit, in the vocabulary `git bisect run` speaks (git-bisect(1)):
 #
-#   0        good
-#   1        bad
-#   125      skip — this commit cannot answer the question
-#   126+     git bisect ABORTS the whole session
+#   0          good
+#   1–124      bad
+#   125        skip — this commit cannot answer the question
+#   126, 127   bad as well: "command not found" is an ordinary error to git
+#   128+       git ABORTS the whole session
 #
-# That last line is why nothing here passes a status through untouched. A test runner that
-# is missing at an old commit exits 127, and a raw pass-through would end the bisect
-# instead of stepping over that commit; a suite killed by a signal exits 128+n and would do
-# the same. Both are clamped below, and the two states that mean "no answer" — a commit
-# that will not build, and a run whose log says it never really ran — become skips rather
-# than a confident, wrong accusation.
+# The kind of verdict comes from run's sidecar, never from the number: the command's own
+# 2 is make failing, and once read here as "the harness could not run it", which skipped
+# every commit where `make test` failed and named nobody. What the number still decides:
+#   - 126 and 127 are a runner that is not there at this commit, which is no evidence
+#     against it, so they are skipped rather than blamed;
+#   - a run stopped by a person — HUP, INT, QUIT, TERM, that is 129/130/131/143 — is not
+#     evidence either, and it is passed through so git aborts, which is what Ctrl-C means;
+#   - any other signal (SEGV, ABRT, BUS, an OOM kill) is the code at this commit crashing,
+#     and a crash is bad — clamped to 1 so git records it instead of aborting.
 cmd_bisect_probe() {
   local build=""
   local -a pass=()
@@ -478,19 +482,43 @@ cmd_bisect_probe() {
     fi
   fi
 
+  # The log path is chosen here so the sidecar can be found afterwards; bisect sets
+  # T_LOGDIR to a directory outside the working tree it is checking commits out into
+  local log="${T_LOGFILE:-}"
+  if [[ -z "$log" ]]; then
+    local dir="${T_LOGDIR:-.test-logs}"
+    mkdir -p "$dir" || fatal "bisect-probe: cannot create $dir"
+    log="$dir/probe-$(date +%Y%m%d-%H%M%S)-$$.log"
+  fi
+
   # A short tail by default: a bisect prints one verdict per commit, and forty lines each
-  # buries the answer. A -t the caller passed comes later in the list and wins.
-  local status=0
-  cmd_run -t 5 "${pass[@]+"${pass[@]}"}" "$@" || status=$?
-  case "$status" in
-    0) return 0 ;;
-    64 | 70 | 79 | 125 | 127)
-      # 64 and 70 the harness could not run it, 79 the run did not really run, 127 the
-      # runner is not there at this commit. None of them is evidence against the commit.
-      echo "t.sh: no verdict from this commit (exit $status) — skipping" >&2
+  # buries the answer. A -t the caller passed comes later in the list and wins. In a
+  # subshell, so a refusal inside run reaches the case below as "no verdict" instead of
+  # ending the probe with a status git would take for an answer.
+  local status=0 kind=""
+  (T_LOGFILE="$log" cmd_run -t 5 "${pass[@]+"${pass[@]}"}" "$@") || status=$?
+  [[ ! -r "$log.verdict" ]] || kind=$(cat "$log.verdict")
+
+  case "$kind" in
+    pass) return 0 ;;
+    lied)
+      echo "t.sh: this commit's run exited 0 but its log says nothing ran — skipping it" >&2
       return 125
       ;;
-    *) return 1 ;;
+    fail)
+      case "$status" in
+        126 | 127)
+          echo "t.sh: the test runner is not there at this commit (exit $status) — skipping it" >&2
+          return 125
+          ;;
+        129 | 130 | 131 | 143) return "$status" ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *)
+      echo "t.sh: no verdict from this commit (exit $status) — the harness could not run it, skipping" >&2
+      return 125
+      ;;
   esac
 }
 
