@@ -10,6 +10,7 @@ section for work that has landed but not shipped would never close
 ### Fixed
 
 - **an `allow` regex grep could not compile turned every run into a pass.** The excuse list is applied with `grep -Ev` before the scan; a regex grep rejects left the filtered log empty, an empty log has no markers, and `run` reported `pass — log clean` for a run that said `collected 0 items`. The worst shape a guard can take, because a typo in the excuse list switched the whole check off without a word. `run` now refuses such a regex before the command starts, with exit 64, and the scan itself reports a filter that did not run as a finding rather than as silence
+- **a symlink to `t.sh` refused every run.** `ln -s .../t.sh ~/.local/bin/t.sh` is how the harness gets onto a PATH, and it looked for `markers/` beside the link rather than beside the file, so every run through the link exited with "holds no markers". The path is resolved through symlinks now, absolute and relative, without `readlink -f`, which macOS only gained in 12.3
 
 ### Changed
 

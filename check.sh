@@ -361,6 +361,18 @@ status=0
 ./t.sh run sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "run accepted a command without -- (got $status); guessing is how the wrong thing gets run"
 
+echo "== run finds its markers through a symlink, absolute and relative"
+# `ln -s .../t.sh ~/.local/bin/t.sh` is how the harness gets onto a PATH. dirname of the
+# link once looked for markers/ beside the link, so every run through it refused.
+mkdir -p "$work/bin" "$work/rel/bin"
+ln -s "$HERE/t.sh" "$work/bin/t.sh"
+ln -s ../../bin/t.sh "$work/rel/bin/t.sh"
+for link in "$work/bin/t.sh" "$work/rel/bin/t.sh"; do
+  status=0
+  "$link" run -t 0 -l "$work/logs" -- sh -c 'echo "47 passed"; exit 0' >/dev/null 2>&1 || status=$?
+  ((status == 0)) || fail "run through the symlink $link could not find its markers (got $status)"
+done
+
 echo "== flaky calls a command that always agrees with itself stable"
 status=0
 ./t.sh flaky 3 -l "$work/logs" -- sh -c 'echo "3 passed"; exit 0' >/dev/null 2>&1 || status=$?
@@ -727,6 +739,15 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/badallow/t.sh"
   ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
   catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
+
+  echo "== the symlink check is able to fail: a harness that reads dirname of the link"
+  copy "$work/unresolved"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed 's/^while \[\[ -L "\$self" \]\]; do$/while false; do/' t.sh >"$work/unresolved/t.sh.new" &&
+    mv "$work/unresolved/t.sh.new" "$work/unresolved/t.sh"
+  chmod +x "$work/unresolved/t.sh"
+  grep -qF 'while false; do' "$work/unresolved/t.sh" || fail "the unresolved-symlink fixture was not planted"
+  catches "$work/unresolved" "through the symlink" "a harness that does not resolve its own symlink"
 
   echo "== the verdict sidecar check is able to fail"
   copy "$work/nosidecar"

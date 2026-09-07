@@ -54,7 +54,20 @@ fatal() {
   exit 70
 }
 
-HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# Resolved through symlinks: `ln -s .../t.sh ~/.local/bin/t.sh` is how this gets onto a
+# PATH, and dirname of the link would look for markers/ beside the link and refuse every
+# run. A loop over readlink rather than `readlink -f`, which macOS only gained in 12.3.
+self="${BASH_SOURCE[0]}"
+while [[ -L "$self" ]]; do
+  target=$(readlink "$self")
+  case "$target" in
+    /*) self="$target" ;;
+    *) self="$(dirname -- "$self")/$target" ;;
+  esac
+done
+HERE=$(cd -- "$(dirname -- "$self")" && pwd)
+SELF="$HERE/$(basename -- "$self")"
+unset self target
 MARKER_DIR="$HERE/markers"
 MARKER_FILES=()
 
@@ -471,9 +484,6 @@ cmd_bisect() {
   git rev-parse --verify --quiet "$good^{commit}" >/dev/null ||
     die "bisect: '$good' is not a commit in this repository"
 
-  local self
-  self=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")
-
   # Logs go outside the working tree: bisect checks other commits out over it, and a
   # directory of logs sitting in the middle of that is noise at best
   local logdir
@@ -489,7 +499,7 @@ cmd_bisect() {
   git bisect good "$good" >/dev/null || fatal "bisect: could not mark $good good"
 
   local status=0
-  T_LOGDIR="$logdir" git bisect run "$self" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" || status=$?
+  T_LOGDIR="$logdir" git bisect run "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" || status=$?
   return "$status"
 }
 
