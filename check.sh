@@ -656,6 +656,20 @@ DEFECTS
   (cd "$since_repo" && tsh falsify --since no-such-ref -l "$work/logs" --out "$work/fo-since" -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "falsify accepted --since with a ref that does not exist (got $status)"
 
+  echo "== --worktree falsifies a checkout of HEAD and leaves the tree in front of you alone"
+  # The suite prints where it runs, so the log can show it was not the fixture's tree
+  status=0
+  wt_out=$(cd "$fal" && tsh falsify --worktree -l "$work/logs" --out "$work/fo-wt" -- sh -c 'pwd; sh suite.sh' 2>&1) || status=$?
+  ((status == 83)) || fail "falsify --worktree exited $status (want 83, the survivor is still there):"$'\n'"$wt_out"
+  grep -q '^SURVIVED  strip/spaces' <<<"$wt_out" || fail "falsify --worktree lost the survivor:"$'\n'"$wt_out"
+  suite_ran_in=$(head -1 "$work/fo-wt/logs/strip-spaces.log")
+  [[ -n "$suite_ran_in" && "$suite_ran_in" != "$fal" ]] ||
+    fail "falsify --worktree ran the suite in the fixture's own tree ($suite_ran_in), not in a worktree"
+  [[ "$(git -C "$fal" worktree list | wc -l)" -eq 1 ]] || fail "falsify --worktree left a worktree behind"
+  git -C "$fal" diff --quiet || fail "falsify --worktree touched the tree in front of you"
+  [[ ! -e "$fal/FALSIFY-IN-PROGRESS" ]] || fail "falsify --worktree put its in-flight marker in the tree in front of you"
+  [[ ! -e "$work/fo-wt/in-flight" ]] || fail "falsify left its in-flight marker after finishing"
+
   echo "== on a GitHub runner a finding is also an annotation on the file and line"
   # A finding next to the code is read by whoever is about to merge it; in a log, by
   # whoever opens the log. The variable is cleared for the negative, because the gate
@@ -951,9 +965,11 @@ check_proofs() {
     plant behaviour badallow "grep cannot compile" "a run that applies an allow regex it never checked" \
       sed t.sh 's/^    \[\[ -z "\$complaint" \]\] || die "allow:.*$/    : "$complaint" # planted/' '# planted'
     plant behaviour carryon "carried on after an interrupt" "a falsify whose interrupt handler returns" \
-      sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
+      sed t.sh "s/^  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
+    plant behaviour leftover "left a worktree behind" "a falsify --worktree that does not clean up" \
+      sed t.sh 's/^    git -C "\$root" worktree remove --force "\$wt" >\/dev\/null 2>&1 || :$/    : # planted/' '# planted'
     plant behaviour unsince "ran nothing and did not say so" "a falsify --since that passes an empty selection in silence" \
       sed t.sh 's/^    printf '"'"'nothing to falsify: .*$/    : # planted/' '# planted'
     plant behaviour unannotated "did not annotate the survivor" "a falsify that keeps its findings out of the diff" \
@@ -1028,8 +1044,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=24 ;;
-    all) want_planted=36 ;;
+    behaviour) want_planted=25 ;;
+    all) want_planted=37 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

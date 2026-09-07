@@ -19,7 +19,7 @@
 #                             INCONCLUSIVE, exit 89, and git's session log is kept
 #   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
-#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--since REF] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
+#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--since REF] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
 #                             break one guard at a time, as written by hand in FILE
 #                             (default tests/defects.sh), and require the suite to notice.
 #                             A defect the suite survives names something nobody checks.
@@ -30,7 +30,10 @@
 #                             defect in a test, vendored or generated file is refused,
 #                             because it proves nothing, unless --any-file says otherwise.
 #                             --since REF runs only the defects in files changed since
-#                             REF, for a pull request; it is a filter, not a proof
+#                             REF, for a pull request; it is a filter, not a proof.
+#                             --worktree edits a checkout in a git worktree instead of
+#                             the files in front of you, so an editor, a watcher or a
+#                             commit made mid-run cannot meet a mutant
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -196,6 +199,9 @@ load_config() {
 
 # What the last cmd_run in this shell concluded: pass, fail or lied. Empty until it ran.
 RUN_VERDICT=""
+
+# falsify's marker of a defect in flight, removed with the restore; global for the traps
+FLIGHT=""
 
 # Fills MARKER_PATTERNS from MARKER_FILES. Called from the shell that can actually exit.
 MARKER_PATTERNS=()
@@ -712,7 +718,7 @@ json_str() {
 }
 
 cmd_falsify() {
-  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out" any_file="" since=""
+  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out" any_file="" since="" worktree=""
   local -a pass=()
   while (($#)); do
     case "$1" in
@@ -722,6 +728,10 @@ cmd_falsify() {
         ;;
       --any-file)
         any_file=1
+        shift
+        ;;
+      --worktree)
+        worktree=1
         shift
         ;;
       --since)
@@ -768,9 +778,11 @@ cmd_falsify() {
   # goes, so an interrupted run still leaves what it had found. Only the files this
   # writes are cleared first — the directory may be somebody's.
   rm -f "$out"/caught.txt "$out"/survived.txt "$out"/stale.txt "$out"/unusable.txt "$out"/timeout.txt \
-    "$out"/expected.txt "$out"/results.json
+    "$out"/expected.txt "$out"/results.json "$out"/in-flight
   rm -rf "$out/logs"
   mkdir -p "$out/logs" || fatal "falsify: cannot create $out"
+  # Absolute, because the run may move into a worktree and the findings belong here
+  out=$(cd -- "$out" && pwd)
   local -a RES_NAME=() RES_FILE=() RES_LINE=() RES_VERDICT=() RES_WHY=()
   write_results() {
     local i first=1
@@ -859,6 +871,32 @@ cmd_falsify() {
     printf 'nothing to falsify: no defect names a file changed since %s — this is a filter, not a proof; run the full list on the default branch\n' "$since"
     return 0
   fi
+
+  # --worktree edits a checkout of HEAD in a git worktree rather than the files in front
+  # of you. In place, a format-on-save, a file watcher, an editor's auto-fix or a commit
+  # made mid-run all see the mutant, and the run has to be left alone for as long as it
+  # takes. In a worktree none of that can happen, at the price of a build that starts
+  # from nothing. Either way a marker names the defect in flight — FALSIFY-IN-PROGRESS at
+  # the root of the worktree, in-flight under the findings directory in place — so a
+  # mutant that somehow outlives the run is found by the name of what put it there.
+  local root wt=""
+  root=$(pwd)
+  if [[ -n "$worktree" ]]; then
+    wt=$(mktemp -d "${TMPDIR:-/tmp}/t.sh.XXXXXX")/wt || fatal "falsify: cannot create a directory for the worktree"
+    git worktree add --detach "$wt" HEAD >/dev/null 2>&1 || fatal "falsify: git could not add a worktree at $wt"
+    cd -- "$wt" || fatal "falsify: cannot enter the worktree at $wt"
+    FLIGHT="$wt/FALSIFY-IN-PROGRESS"
+  else
+    FLIGHT="$out/in-flight"
+  fi
+  # shellcheck disable=SC2317  # reached through the traps
+  cleanup_worktree() {
+    [[ -n "$wt" ]] || return 0
+    cd -- "$root" || :
+    git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 || :
+    rm -rf "$(dirname -- "$wt")"
+    wt=""
+  }
   for f in "${DEF_FILE[@]}"; do
     [[ " ${files[*]-} " == *" $f "* ]] || files+=("$f")
   done
@@ -895,6 +933,7 @@ cmd_falsify() {
     for i in "${!files[@]}"; do
       printf '%s' "${originals[$i]}" >"${files[$i]}" 2>/dev/null || :
     done
+    rm -f "$FLIGHT"
   }
   # EXIT covers a die or a fatal. INT and TERM restore and then die of the same signal,
   # because a handler that merely returns lets the script carry on: written that way,
@@ -909,9 +948,9 @@ cmd_falsify() {
   end_mutant() {
     [[ -z "$MUTANT_PGID" ]] || kill -TERM -- -"$MUTANT_PGID" 2>/dev/null || :
   }
-  trap 'restore_all' EXIT
-  trap 'end_mutant; restore_all; trap - INT; kill -INT $$' INT
-  trap 'end_mutant; restore_all; trap - TERM; kill -TERM $$' TERM
+  trap 'restore_all; cleanup_worktree' EXIT
+  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$' INT
+  trap 'end_mutant; restore_all; cleanup_worktree; trap - TERM; kill -TERM $$' TERM
 
   # Assigns VERDICT — caught, survived, unusable, timedout, or none — rather than printing
   # it: a $(...) would swallow a die inside run, and the kind of verdict comes from run's
@@ -1030,9 +1069,11 @@ cmd_falsify() {
     # Checked, because a write that fails leaves the pristine code in place, the suite
     # then passes against it, and that would be reported as a survivor: a read-only file
     # once made a guard the suite does cover read as one nobody checks
+    printf '%s\n' "$name" >"$FLIGHT"
     printf '%s' "$mutated" >"$file" || fatal "falsify: cannot write $file — the tree is untouched, and nothing was measured"
     suite_verdict "$out/logs/$(log_name "$name").log" "$@"
     printf '%s' "$content" >"$file"
+    rm -f "$FLIGHT"
 
     # A declared exception: surviving is the expected outcome and no finding; being caught
     # means the declaration has outlived its truth, which is the list's fault, like stale
@@ -1098,6 +1139,7 @@ cmd_falsify() {
     [[ "$__slurped" == "$pristine" ]] ||
       fatal "falsify: $f was not restored to what it was — restore it from git before doing anything else"
   done
+  cleanup_worktree
 
   # Three kinds of not-caught, three different problems, three exit codes. A survivor is
   # the suite's problem. A stale or unusable entry is the list's: it no longer describes
