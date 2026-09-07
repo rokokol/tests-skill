@@ -614,6 +614,41 @@ DEFECTS
   (cd "$fal" && tsh falsify -l "$work/logs" clamp -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 0)) || fail "falsify exited $status on a list whose only defect is caught (want 0)"
 
+  echo "== a defect that never lets the suite finish is timed out, not caught"
+  # A neutered guard is often a loop that no longer ends. Without a deadline it hung the
+  # whole falsification; credited as caught it would reward the suite for a hang.
+  printf "defect 'clamp/hang' 'impl.sh' 'echo 0; else' 'while :; do sleep 1; done; else' 'a hang'\n" >"$fal/tests/hang.sh"
+  # Under a watchdog of its own, because the thing being checked is that falsify does not
+  # hang, and a check that hangs when it fails is not a check. Job control, so the group
+  # can be ended if it comes to that.
+  set -m
+  (cd "$fal" && exec "$BASH" "$HERE/t.sh" falsify -d tests/hang.sh --timeout 1 -l "$work/logs" -- sh suite.sh) \
+    >"$work/hang.out" 2>&1 &
+  hang_pid=$!
+  set +m
+  hang_waited=0
+  while kill -0 "$hang_pid" 2>/dev/null && ((hang_waited < 200)); do
+    sleep 0.1
+    hang_waited=$((hang_waited + 1))
+  done
+  if kill -0 "$hang_pid" 2>/dev/null; then
+    kill -TERM -- -"$hang_pid" 2>/dev/null || :
+    sleep 1
+    kill -KILL -- -"$hang_pid" 2>/dev/null || :
+    wait "$hang_pid" 2>/dev/null || :
+    git -C "$fal" checkout -q -- . 2>/dev/null || :
+    fail "a defect that hangs the suite hangs falsify with it, twenty seconds and counting — nothing timed it out"
+  fi
+  status=0
+  wait "$hang_pid" || status=$?
+  fal_out=$(cat "$work/hang.out")
+  ((status == 84)) || fail "falsify exited $status on a defect that hangs the suite (want 84):"$'\n'"$fal_out"
+  grep -q '^TIMEDOUT  clamp/hang' <<<"$fal_out" || fail "falsify did not report the hanging defect as timed out:"$'\n'"$fal_out"
+  cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" || fail "falsify did not put impl.sh back after a timeout"
+  status=0
+  (cd "$fal" && tsh falsify --timeout abc -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "falsify accepted --timeout abc (got $status)"
+
   echo "== an interrupted falsify dies interrupted, with the source put back"
   # A trap that only restored and returned let the loop carry on: Ctrl-C stopped nothing,
   # the interrupted defect vanished from the report, and the summary still counted it
@@ -831,7 +866,9 @@ check_proofs() {
     plant behaviour badallow "grep cannot compile" "a run that applies an allow regex it never checked" \
       sed t.sh 's/^    \[\[ -z "\$complaint" \]\] || die "allow:.*$/    : "$complaint" # planted/' '# planted'
     plant behaviour carryon "carried on after an interrupt" "a falsify whose interrupt handler returns" \
-      sed t.sh "s/^  trap 'restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'restore_all' INT/" "trap 'restore_all' INT"
+      sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
+    plant behaviour nodeadline "nothing timed it out" "a falsify with no deadline" \
+      sed t.sh 's/^      if \[\[ -n "\$deadline" \]\] \&\& ((waited >= deadline \* 10)); then$/      if false; then # planted/' '# planted'
     plant behaviour surrender "want 89" "a bisect that reports an all-skipped history as resolved" \
       sed t.sh 's/^    return 89$/    return 0 # planted/' '# planted'
     plant behaviour muted "hid run's refusal" "a flaky that mutes the harness's own refusals" \
@@ -894,8 +931,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=17 ;;
-    all) want_planted=29 ;;
+    behaviour) want_planted=18 ;;
+    all) want_planted=30 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

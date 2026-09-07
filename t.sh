@@ -19,10 +19,12 @@
 #                             INCONCLUSIVE, exit 89, and git's session log is kept
 #   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
-#   t.sh falsify [-d FILE] [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
+#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
 #                             break one guard at a time, as written by hand in FILE
 #                             (default tests/defects.sh), and require the suite to notice.
-#                             A defect the suite survives names something nobody checks
+#                             A defect the suite survives names something nobody checks.
+#                             Each run is held to a deadline, five times the unbroken
+#                             suite's own time or twenty seconds, or --timeout
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -38,6 +40,7 @@
 #   70  the harness itself failed — a log it cannot write, a file it cannot put back
 #   79  CMD exited 0 but its log says it did not do what a pass claims (run)
 #   83  at least one defect SURVIVED: the suite did not notice it (falsify)
+#   84  a defect never let the suite finish within the deadline (falsify)
 #   85  the suite was red, or never really ran, before any edit was made (falsify)
 #   86  the runs disagreed with each other (flaky)
 #   87  the defect list has drifted: a find text no longer matches exactly once (falsify)
@@ -658,12 +661,17 @@ count_occurrences() {
 }
 
 cmd_falsify() {
-  local defects="tests/defects.sh" build="" filter="" logdir=""
+  local defects="tests/defects.sh" build="" filter="" logdir="" deadline=""
   local -a pass=()
   while (($#)); do
     case "$1" in
       -d)
         defects="${2:?-d needs a file}"
+        shift 2
+        ;;
+      --timeout)
+        deadline="${2:?--timeout needs a number of seconds}"
+        [[ "$deadline" =~ ^[0-9]+$ ]] || die "falsify: --timeout needs a number of seconds, got '$deadline'"
         shift 2
         ;;
       -b)
@@ -753,14 +761,28 @@ cmd_falsify() {
   # gone from the report and still counted in the summary. `exit 130` would be wrong
   # too — the caller would see an exit rather than a signal, and a loop around this
   # would keep going.
+  # The suite runs in its own process group (see suite_verdict), which Ctrl-C at the
+  # terminal does not reach, so the group is ended here first
+  MUTANT_PGID=""
+  # shellcheck disable=SC2317  # reached through the traps
+  end_mutant() {
+    [[ -z "$MUTANT_PGID" ]] || kill -TERM -- -"$MUTANT_PGID" 2>/dev/null || :
+  }
   trap 'restore_all' EXIT
-  trap 'restore_all; trap - INT; kill -INT $$' INT
-  trap 'restore_all; trap - TERM; kill -TERM $$' TERM
+  trap 'end_mutant; restore_all; trap - INT; kill -INT $$' INT
+  trap 'end_mutant; restore_all; trap - TERM; kill -TERM $$' TERM
 
-  # Assigns VERDICT — caught, survived, unusable, or none — rather than printing it: a
-  # $(...) would swallow a die inside run, and the kind of verdict comes from run's
+  # Assigns VERDICT — caught, survived, unusable, timedout, or none — rather than printing
+  # it: a $(...) would swallow a die inside run, and the kind of verdict comes from run's
   # sidecar, never from the number, because the suite's own exit 79 is not the harness's.
   # run goes in a subshell so its own refusal ends that run and reaches here as "none".
+  #
+  # The run is watched against a deadline. A neutered guard is often a loop that no
+  # longer ends — the increment removed from a counter is the canonical one — and without
+  # a deadline that mutant would hang the whole falsification. The suite is started in
+  # its own process group, under job control, so the deadline can end the runner and
+  # everything it spawned, not just the shell around them; without GNU timeout(1), which
+  # macOS does not have, that is what a watchdog is.
   VERDICT=""
   local runs=0
   suite_verdict() {
@@ -772,8 +794,31 @@ cmd_falsify() {
       fi
     fi
     runs=$((runs + 1))
-    local log="$logdir/falsify-$$-$runs.log" kind=""
-    (T_LOGFILE="$log" cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@") >/dev/null 2>&1 || :
+    local log="$logdir/falsify-$$-$runs.log" kind="" pid waited=0 grace=0
+    set -m
+    (T_LOGFILE="$log" cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@") >/dev/null 2>&1 &
+    pid=$!
+    set +m
+    MUTANT_PGID="$pid"
+    # Tenths of a second, so a fast suite is not held for a whole second per defect
+    while kill -0 "$pid" 2>/dev/null; do
+      if [[ -n "$deadline" ]] && ((waited >= deadline * 10)); then
+        kill -TERM -- -"$pid" 2>/dev/null || :
+        while kill -0 "$pid" 2>/dev/null && ((grace < 50)); do
+          sleep 0.1
+          grace=$((grace + 1))
+        done
+        kill -KILL -- -"$pid" 2>/dev/null || :
+        wait "$pid" 2>/dev/null || :
+        MUTANT_PGID=""
+        VERDICT=timedout
+        return
+      fi
+      sleep 0.1
+      waited=$((waited + 1))
+    done
+    wait "$pid" 2>/dev/null || :
+    MUTANT_PGID=""
     [[ ! -r "$log.verdict" ]] || kind=$(cat "$log.verdict")
     case "$kind" in
       pass) VERDICT=survived ;;
@@ -784,8 +829,16 @@ cmd_falsify() {
 
   echo "== the suite is green before anything is broken"
   # Falsification measures the distance between green and red. Starting red there is no
-  # distance, and every "caught" below would be meaningless.
+  # distance, and every "caught" below would be meaningless. The baseline is timed, and
+  # the deadline for every mutant is five times that or twenty seconds, whichever is more
+  # — five times leaves room for a slower path, twenty seconds for a fast suite whose
+  # five times would be a fraction of a second. --timeout sets it outright.
+  local started=$SECONDS
   suite_verdict "$@"
+  if [[ -z "$deadline" ]]; then
+    deadline=$(((SECONDS - started) * 5))
+    ((deadline >= 20)) || deadline=20
+  fi
   case "$VERDICT" in
     survived) ;;
     caught)
@@ -796,11 +849,15 @@ cmd_falsify() {
       echo "t.sh: falsify: the suite did not really run before any edit — check the build command and the log" >&2
       return 85
       ;;
+    timedout)
+      echo "t.sh: falsify: the suite did not finish within the --timeout before any edit was made" >&2
+      return 85
+      ;;
     *) fatal "falsify: the baseline run ended without a verdict — the harness could not run the suite (see $logdir)" ;;
   esac
 
   local i name file find replace why content mutated occurrences pristine
-  local -a caught=() survived=() stale=() unusable=() ran=()
+  local -a caught=() survived=() stale=() unusable=() timedout=() ran=()
   for i in "${!DEF_NAME[@]}"; do
     name="${DEF_NAME[$i]}"
     [[ -z "$filter" || "$name" == *"$filter"* ]] || continue
@@ -848,6 +905,13 @@ cmd_falsify() {
         printf 'unusable  %s: the edit stopped it building, so the tests were never asked\n' "$name"
         unusable+=("$name")
         ;;
+      timedout)
+        # Neither caught — that would credit the suite for a hang — nor SURVIVED, which
+        # would blame it for an edit that never let it answer. Like stale, a fault of the
+        # entry: the edit most likely made a loop that does not end.
+        printf 'TIMEDOUT  %s: the suite did not finish within %ss, so it never gave a verdict\n' "$name" "$deadline"
+        timedout+=("$name")
+        ;;
       # No verdict is a suite run that ended without one — killed, most likely. Silently
       # matching nothing here is how a defect once vanished from the report.
       *) fatal "falsify: no verdict for $name — the suite run ended without one" ;;
@@ -870,11 +934,15 @@ cmd_falsify() {
   # the code, or it breaks the build rather than the behaviour, and a report that folded
   # those into the survivors blamed the tests for a list nobody had maintained.
   echo
-  printf '%d caught, %d SURVIVED, %d stale, %d unusable, of %d defect(s)\n' \
-    "${#caught[@]}" "${#survived[@]}" "${#stale[@]}" "${#unusable[@]}" "${#ran[@]}"
+  printf '%d caught, %d SURVIVED, %d stale, %d unusable, %d timed out, of %d defect(s)\n' \
+    "${#caught[@]}" "${#survived[@]}" "${#stale[@]}" "${#unusable[@]}" "${#timedout[@]}" "${#ran[@]}"
   if ((${#survived[@]} > 0)); then
     printf 'the suite did not notice %d of them — read the SURVIVED lines: each names what nobody checks\n' "${#survived[@]}" >&2
     return 83
+  fi
+  if ((${#timedout[@]} > 0)); then
+    printf '%d edit(s) never let the suite finish — an infinite loop, most likely; neuter the guard another way\n' "${#timedout[@]}" >&2
+    return 84
   fi
   if ((${#stale[@]} > 0)); then
     printf 'the defect list has drifted from the code: %d find text(s) no longer match once\n' "${#stale[@]}" >&2
