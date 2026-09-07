@@ -27,6 +27,7 @@ section for work that has landed but not shipped would never close
 
 ### Added
 
+- `falsify --since REF` runs only the defects in files changed since REF, which is the run for a pull request, with the full list kept for the default branch. It is a filter and not a proof, a change in one file breaks the tests of another, so an empty selection is said out loud rather than passed in silence
 - on a GitHub runner every `falsify` finding is also an annotation on the file and line, an error for a survivor and a warning for a stale, unusable or timed-out entry, so it shows in the diff of the pull request. A finding in a log is read by whoever opens the log; one next to the code is read by whoever is about to merge it
 - **a defect nothing can catch is declared where it is written**: `defect ... expect survived "reason"`. Some edits change the code without changing anything a caller can observe, and a list that has to leave them out loses the record that somebody looked. Declared, the defect is reported `expected` rather than `SURVIVED`, and the day the suite does catch it the declaration is reported `stale`, exit 87, so an exception cannot outlive its truth. On the line and not in a separate list, because an exception kept elsewhere is one nobody rereads
 - a `SURVIVED` line is followed by where the edit was and what it was, `FILE:LINE  - before` and `+ after`, because a survivor is only actionable next to the code it names; `results.json` carries the line too

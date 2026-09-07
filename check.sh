@@ -634,6 +634,28 @@ DEFECTS
   (cd "$fal" && tsh falsify -l "$work/logs" clamp -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 0)) || fail "falsify exited $status on a list whose only defect is caught (want 0)"
 
+  echo "== --since narrows the list to the files a change touched, and says so when that is nothing"
+  # In a clone, so the fixture's history stays what the checks above and below expect
+  since_repo="$work/since-repo"
+  git clone -q "$fal" "$since_repo"
+  git -C "$since_repo" config user.name check
+  git -C "$since_repo" config user.email check@example.invalid
+  echo note >"$since_repo/note.txt"
+  git -C "$since_repo" add note.txt && git -C "$since_repo" commit -q -m "a note, no code"
+  status=0
+  since_out=$(cd "$since_repo" && tsh falsify --since HEAD~1 -l "$work/logs" --out "$work/fo-since" -- sh suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "falsify --since exited $status where no defect names a changed file (want 0):"$'\n'"$since_out"
+  grep -q '^nothing to falsify' <<<"$since_out" || fail "falsify --since ran nothing and did not say so:"$'\n'"$since_out"
+  printf '# touched\n' >>"$since_repo/impl.sh"
+  git -C "$since_repo" add impl.sh && git -C "$since_repo" commit -q -m "impl.sh changed"
+  status=0
+  since_out=$(cd "$since_repo" && tsh falsify --since HEAD~1 -l "$work/logs" --out "$work/fo-since" -- sh suite.sh 2>&1) || status=$?
+  ((status == 83)) || fail "falsify --since exited $status where impl.sh changed and its survivor should run (want 83):"$'\n'"$since_out"
+  grep -q '^SURVIVED  strip/spaces' <<<"$since_out" || fail "falsify --since skipped a defect in the changed file:"$'\n'"$since_out"
+  status=0
+  (cd "$since_repo" && tsh falsify --since no-such-ref -l "$work/logs" --out "$work/fo-since" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "falsify accepted --since with a ref that does not exist (got $status)"
+
   echo "== on a GitHub runner a finding is also an annotation on the file and line"
   # A finding next to the code is read by whoever is about to merge it; in a log, by
   # whoever opens the log. The variable is cleared for the negative, because the gate
@@ -932,6 +954,8 @@ check_proofs() {
       sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
+    plant behaviour unsince "ran nothing and did not say so" "a falsify --since that passes an empty selection in silence" \
+      sed t.sh 's/^    printf '"'"'nothing to falsify: .*$/    : # planted/' '# planted'
     plant behaviour unannotated "did not annotate the survivor" "a falsify that keeps its findings out of the diff" \
       sed t.sh 's/^        annotate error "\$file" "\$line" "SURVIVED \$name: \$why"$/        : # planted/' '# planted'
     plant behaviour unexpected "was reported as a survivor" "a falsify that ignores a declared exception" \
@@ -1004,8 +1028,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=23 ;;
-    all) want_planted=35 ;;
+    behaviour) want_planted=24 ;;
+    all) want_planted=36 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

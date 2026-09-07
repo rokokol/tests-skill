@@ -19,7 +19,7 @@
 #                             INCONCLUSIVE, exit 89, and git's session log is kept
 #   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
-#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
+#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--since REF] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
 #                             break one guard at a time, as written by hand in FILE
 #                             (default tests/defects.sh), and require the suite to notice.
 #                             A defect the suite survives names something nobody checks.
@@ -28,7 +28,9 @@
 #                             found goes under DIR (default falsify.out): one file of
 #                             names per verdict, a log per defect, and results.json. A
 #                             defect in a test, vendored or generated file is refused,
-#                             because it proves nothing, unless --any-file says otherwise
+#                             because it proves nothing, unless --any-file says otherwise.
+#                             --since REF runs only the defects in files changed since
+#                             REF, for a pull request; it is a filter, not a proof
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -710,7 +712,7 @@ json_str() {
 }
 
 cmd_falsify() {
-  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out" any_file=""
+  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out" any_file="" since=""
   local -a pass=()
   while (($#)); do
     case "$1" in
@@ -721,6 +723,10 @@ cmd_falsify() {
       --any-file)
         any_file=1
         shift
+        ;;
+      --since)
+        since="${2:?--since needs a git ref}"
+        shift 2
         ;;
       --out)
         out="${2:?--out needs a directory}"
@@ -825,6 +831,33 @@ cmd_falsify() {
       looks_like_test_file "${DEF_FILE[$i]}" || continue
       die "falsify: ${DEF_NAME[$i]} edits ${DEF_FILE[$i]}, which looks like a test, vendored or generated file — a defect there proves nothing about the suite (--any-file if the list knows better)"
     done
+  fi
+
+  # --since narrows the list to the defects in files that changed since a ref: the run
+  # for a pull request, with the full list kept for the default branch. A filter and not
+  # a proof — a change in one file breaks the tests of another — which is why an empty
+  # selection is said out loud rather than passed in silence.
+  local changed=""
+  if [[ -n "$since" ]]; then
+    git rev-parse --verify --quiet "$since^{commit}" >/dev/null ||
+      die "falsify: --since '$since' is not a commit in this repository"
+    changed=$(git diff --name-only "$since" -- && printf x)
+    changed="${changed%x}"
+  fi
+  changed_since() { # changed_since FILE -> true when FILE is in the diff, or --since is off
+    [[ -n "$since" ]] || return 0
+    [[ $'\n'"$changed" == *$'\n'"$1"$'\n'* ]]
+  }
+  local -a selected=()
+  for i in "${!DEF_NAME[@]}"; do
+    [[ -z "$filter" || "${DEF_NAME[$i]}" == *"$filter"* ]] || continue
+    changed_since "${DEF_FILE[$i]}" || continue
+    selected+=("$i")
+  done
+  if ((${#selected[@]} == 0)); then
+    [[ -n "$since" ]] || die "falsify: no defect matched the filter '$filter'"
+    printf 'nothing to falsify: no defect names a file changed since %s — this is a filter, not a proof; run the full list on the default branch\n' "$since"
+    return 0
   fi
   for f in "${DEF_FILE[@]}"; do
     [[ " ${files[*]-} " == *" $f "* ]] || files+=("$f")
@@ -965,9 +998,8 @@ cmd_falsify() {
 
   local name file find replace why expect content mutated occurrences pristine line
   local -a caught=() survived=() stale=() unusable=() timedout=() expected=() ran=()
-  for i in "${!DEF_NAME[@]}"; do
+  for i in "${selected[@]}"; do
     name="${DEF_NAME[$i]}"
-    [[ -z "$filter" || "$name" == *"$filter"* ]] || continue
     file="${DEF_FILE[$i]}"
     find="${DEF_FIND[$i]}"
     replace="${DEF_REPLACE[$i]}"
@@ -1066,8 +1098,6 @@ cmd_falsify() {
     [[ "$__slurped" == "$pristine" ]] ||
       fatal "falsify: $f was not restored to what it was — restore it from git before doing anything else"
   done
-
-  ((${#ran[@]} > 0)) || die "falsify: no defect matched the filter '$filter'"
 
   # Three kinds of not-caught, three different problems, three exit codes. A survivor is
   # the suite's problem. A stale or unusable entry is the list's: it no longer describes
