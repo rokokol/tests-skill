@@ -31,6 +31,10 @@ Two commands, both gating. In `tsconfig.json`, the settings that decide whether 
 
 `any` deserves its own attention: once a value is `any`, every operation on it type-checks, so a test built on `any` fixtures asserts far less than it appears to. `@typescript-eslint` with `no-unsafe-*` reports where that is happening.
 
+## Fail on nothing ran, natively
+
+The runners are node's, with node's switches — see [node.md](node.md). What is specific here is that `tsc --noEmit` is its own gate with its own honest status: it exits 2 on any error and 0 only when every file it was given checks, and it cannot run zero files without saying so. What it can do is check the wrong files: a `tsconfig.json` whose `include` misses a directory reports a clean check of everything else, so the number of files it checked is worth reading once, with `--listFilesOnly`, on the day the config is written.
+
 ## Testing the types themselves
 
 Where a type is the product — a public API, a generic helper — assert on it, with `expectTypeOf` (vitest), `tsd`, or `@ts-expect-error` on a call that must not compile. `@ts-expect-error` is the falsifiable one: it fails when the error stops occurring, so it cannot rot into a comment.

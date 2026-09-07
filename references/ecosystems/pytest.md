@@ -27,6 +27,10 @@ The unambiguous two are already in the default set; the noisier ones ship as `ma
 
 `pytest` exits 5 on "no tests collected". Many wrappers coerce that to 0, and CI shows a green tick over a suite that did not exist. `t.sh run` flags the log line regardless.
 
+## Fail on nothing ran, natively
+
+pytest exits 5 when nothing was collected, unconditionally: there is no flag to make an empty run pass, and none is needed. What turns that into a lie is a wrapper — a Makefile recipe with `|| true`, a CI step that maps 5 to 0 because "no tests here yet" — so the rule for pytest is the opposite of most runners: never soften the status, and let `t.sh run` read the log for the wrappers you did not write. The same principle for the rest of the run: `--strict-markers` and `--strict-config` make a typo an error instead of a silent no-op, `-W error` makes a warning a failure. Where a runner has such a switch, it is better than a marker; where it has none, the marker is all there is.
+
 ## Determinism
 
 - `tmp_path` / `tmp_path_factory`, never a hardcoded `/tmp/mytest`.

@@ -38,6 +38,10 @@ Two shapes worth knowing:
 - **A `for` loop returns its last iteration's status**, so a loop that fails in the middle and succeeds at the end succeeds. Track failures in a counter and exit on it.
 - **`yes | cmd` under `pipefail`** turns `yes`'s normal SIGPIPE death into a pipeline failure. Use `yes 2>/dev/null | cmd` or restructure.
 
+## Fail on nothing ran, natively
+
+bats has it the right way round: a suite with no tests exits 1 unless `--allow-empty-suite` says otherwise, so the rule is not to pass that flag; the `1..0` marker in the default set is for the TAP producers that do not. One bats behaviour interacts with this harness: in focus mode — a `# bats:focus` tag — a successful run's exit code is **forced to 1** so a focused run cannot be mistaken for a full one, and `BATS_NO_FAIL_FOCUS_RUN=1` disables that, which bats documents as the setting for `git bisect`. Under `t.sh bisect`, a focused suite without it marks every commit bad.
+
 ## Determinism and isolation
 
 - `mktemp -d` plus a `trap ... EXIT` for cleanup. Never a fixed path under `/tmp`.

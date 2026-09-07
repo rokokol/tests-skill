@@ -24,6 +24,10 @@ t.sh run -- go test ./... -count=1 -race -shuffle=on
 
 `[no test files]` and `[no tests to run]` are the reason those markers are **not** in `t.sh`'s default table: in any real module most packages have no tests, and a default that fires on them would be switched off on day one. They ship as an opt-in set instead — `t.sh run -m go -- go test ./... -count=1` — worth adopting once the repository expects tests everywhere; before that, grep for the count of `ok ` lines instead. `markers/go.txt` also carries `(cached)`, `[build failed]` and `[setup failed]`.
 
+## Fail on nothing ran, natively
+
+There is no such switch in `go test`. A `-run` pattern that matches nothing prints `testing: warning: no tests to run`, then `PASS`, then `ok`, and exits 0; a package without test files prints `[no test files]` and exits 0; the proposal to make either a failure was closed. This is the one ecosystem where the marker is the whole guard, which is why `markers/go.txt` exists and why it is opted into with `-m go` rather than on by default — a healthy workspace prints `[no test files]` for every package without tests, and a marker that cries wolf gets switched off. What the flags can do is keep the run honest in other ways: `-count=1` against the cache, `-race` against the class of bug that shows up as flakiness, `-shuffle=on` against order dependence.
+
 ## Determinism
 
 - `t.TempDir()` and `t.Setenv()` — both undo themselves; a manual `os.Setenv` leaks into every later test in the binary.

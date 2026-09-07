@@ -29,6 +29,10 @@ The sanitizer lines are in the default set already; the ctest and gtest ones shi
 
 That last one deserves care: anything with a side effect inside `assert()` disappears in a release build, so the release binary behaves differently from the one that was tested.
 
+## Fail on nothing ran, natively
+
+ctest has the switch and defaults it off: `ctest --no-tests=error` fails a run that found no tests, and without it the default on the command line is `ignore`, which prints `No tests were found!!!` and exits 0 — the marker in `markers/cpp.txt` is for the runs that never got the flag. It arrived in CMake 3.17, and since 3.26 `CTEST_NO_TESTS_ACTION=error` in the environment does the same for every invocation. The build half has no switch at all: `ninja: no work to do.` and `make: Nothing to be done for 'test'.` both exit 0, which is fine when the binaries are current and a lie when the build was pointed at yesterday's tree, so the test command should always follow the build command in the same job, and a run whose build printed nothing is worth a second look.
+
 ## Determinism
 
 - `std::filesystem::temp_directory_path()` plus a unique subdirectory per test, removed afterwards.

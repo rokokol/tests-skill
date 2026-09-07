@@ -27,6 +27,10 @@ Two invocations, not one: a build failure is a build failure, and folding it int
 
 `running 0 tests` is printed for every target without tests — doc-test targets and empty integration targets included — so it is not in `t.sh`'s default set. It ships as an opt-in one instead — `t.sh run -m rust -- cargo test --workspace` — worth adopting in a crate where every target really is expected to have tests. `markers/rust.txt` also carries `thread 'main' panicked` and the failed summary line. A filter that matched nothing prints the same two empty-run lines with `N filtered out` beside them; `0 filtered out` itself is what every healthy full run prints, and a marker on it once reddened every good run.
 
+## Fail on nothing ran, natively
+
+`cargo test` has no such switch: a filter that matches nothing prints `running 0 tests` and exits 0. `cargo nextest` does — it exits 4, `NO_TESTS_RUN`, when nothing was selected, 101 when the build failed and 100 when a test failed, which is a strictly better verdict than `cargo test`'s 0 or 101 — so where nextest is already in use the marker set is a second line, not the first. One thing nextest does that this skill forbids: `--retries N` reruns a failed test and, when a retry passes, marks it *flaky* and **counts it as a success by default**. `--flaky-result fail` is the setting that keeps the gate honest, and it does not turn retries on by itself.
+
 ## Determinism
 
 - `tempfile::TempDir` for filesystem work; it removes itself on drop.
