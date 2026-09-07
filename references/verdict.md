@@ -15,7 +15,7 @@ Every one of these is written to make output readable, and every one of them thr
 Three fixes, in order of preference:
 
 - **Do not pipe.** Redirect to a file, let the command's own status stand, then read the file. This is what `t.sh run` does, and why it prints the tail only after the verdict is already decided — output printed before a verdict can become the verdict.
-- **`${PIPESTATUS[0]}`** — bash, immediately after the pipeline, before any other command runs (including `echo`). Note that this is bash-specific: zsh spells it `$pipestatus` and indexes from 1, and a line copied between the two silently yields an empty string.
+- **`${PIPESTATUS[0]}`** — bash, immediately after the pipeline, before any other command runs. Any simple command resets it, an assignment or a `local` included, so the whole array is copied in one command, `ps=("${PIPESTATUS[@]}")`, and read from the copy; a second reference on the next line is already empty. It is bash-specific: zsh spells it `$pipestatus` and indexes from 1, and a line copied between the two silently yields an empty string.
 - **`set -o pipefail`** — makes the pipeline report the *last* non-zero status in it. Good as a blanket safety net, imprecise as an answer: if the command succeeds and `tee` fails on a full disk, pipefail reports a test failure that did not happen.
 
 The same trap wears other clothes. `cmd &` then `wait` without checking; `$?` read after an intervening `echo`; a `for` loop whose body fails while the loop returns the status of its last iteration; a shell function whose final command is a log line. In each, the status you end up acting on belongs to something other than the thing you ran.
@@ -43,7 +43,7 @@ Choosing markers is the part that needs judgement, so they live as data in `mark
 - **`-p 'text'`** adds a single marker for one run, which is how a new one usually starts life before it earns a place in a file.
 - **`T_ALLOW='regex'`** excuses a marker a repository genuinely expects — a negative test asserting a traceback — and the line that excuses it documents the exception where the next reader will find it.
 
-Two rules keep the files honest, and `check.sh` enforces both: every entry in every set must catch a line in that set's fixture, so a dead marker cannot sit there looking like a guard; and every entry in the default set must additionally stay silent on a healthy fixture. A set that resolves to nothing — a missing file, an empty one, a name that does not exist — is a refusal to run, never a quiet pass.
+Two rules keep the files honest, and `check.sh` enforces both: every entry in every set must catch a line in that set's lying fixture, so a dead marker cannot sit there looking like a guard; and every entry must stay silent on a healthy run of the tool it is for, kept under `tests/fixtures/clean/` and captured from a real run — every default entry on all of them. The second rule exists because the rust set once carried `0 filtered out`, which every healthy `cargo test` prints, and reddened every good run until a healthy one was kept. A set that resolves to nothing — a missing file, an empty one, a name that does not exist — is a refusal to run, never a quiet pass. Where the runner itself can refuse an empty run, that switch is better than a marker, and each ecosystem reference names its own.
 
 ## The repository's own policy
 
@@ -63,16 +63,41 @@ Three properties matter more than the format:
 - **It is read from the current directory only.** No search up the tree: a config found three directories away is a config nobody knew was in effect. `T_CONFIG` points elsewhere, and `T_CONFIG=` turns it off.
 - **A broken config refuses rather than being ignored.** An unknown key, a key with no value, a marker set that does not exist — each stops the run and names the line. A typo that is skipped leaves a repository believing in markers that were never loaded, which is worse than having no config at all.
 
-What you pass on the command line adds to it: `-m` and `-p` append, `-l` and `T_ALLOW` override.
+What you pass on the command line adds to it: `-m` and `-p` append, `-l` and `T_ALLOW` override. `T_LOGDIR` names the log directory from the environment, `T_LOGFILE` one log file, `T_CONFIG` another policy file or, empty, none.
+
+## What the harness answers with
+
+The command's own status, passed through unchanged, is the answer in every case but the ones the harness exists to add, and those sit in a band no test runner uses: pytest's 2 to 5, GNU make's 2, `mix test`'s 2, cargo-nextest's 4 for "no tests ran" all collide with the low numbers the harness once used, and a bisect over a Makefile-driven suite skipped every failing commit because of it.
+
+| Exit | Meaning |
+|---|---|
+| 64 | a usage error: a flag, the config, a missing `--`, an `allow` regex grep rejects |
+| 70 | the harness itself failed: a log it cannot write, a file it cannot put back |
+| 79 | `run`: the command exited 0 and its log says it did not do what a pass claims |
+| 83 | `falsify`: a defect survived; `prove`: the tests pass without the fix |
+| 84 | `falsify`, `prove`: the suite did not finish within the deadline |
+| 85 | `falsify`, `prove`: the suite was red, or never really ran, before any edit |
+| 86 | `flaky`: the runs disagreed with each other |
+| 87 | `falsify`: the defect list has drifted from the code |
+| 88 | `falsify`, `prove`: an edit only stopped the build, so the tests were never asked |
+| 89 | `bisect`: only commits that could not answer are left between good and bad |
+
+The *kind* of verdict cannot ride on a number either — the suite's own 79 is not the harness's — so `run` writes it beside the log as `LOG.verdict`, one word, `pass`, `fail` or `lied`, and the other subcommands read that instead of guessing. A wrapper of your own can do the same.
 
 ## Verification before completion
 
 The rule is not about suites; it is about claims. Before writing that something works, run the thing that would prove it does not and read the whole output.
 
-- A fix is verified by reproducing the original symptom and watching it stop, not by the fix looking correct.
-- A test is verified by watching it fail before the code exists — otherwise you have proven only that it passes.
-- A build is verified by its own exit status, read directly.
-- A program is verified by running it and reading its log, not by its suite being green. A suite tests what someone thought to test; the program does what it does.
-- Another agent's report is not evidence. Neither is "this should work", "the change is trivial", or having been careful.
+| The claim | The evidence it needs | What does not count |
+|---|---|---|
+| the tests pass | the command run after the last edit, its status and its log, this run | a run from before the change; a run of unchanged code repeated |
+| the fix works | the original symptom reproduced, then watched stopping | the fix looking correct |
+| the test is about the fix | the test seen red without the fix, `t.sh prove` | the test being green |
+| the build is green | its own exit status, read directly | a summarising pipe |
+| the program works | started, driven, its log read | its suite being green; a suite tests what someone thought to test |
+| the requirements are met | the list of them, checked one by one | the tests passing |
+| the task is done | the diff, read | the report of whoever did it |
 
-The phrases that reliably precede a false claim — "should be fine", "just this once", "the agent said it passed", "obviously correct" — are worth treating as a signal to go and run the command instead.
+Two more things about who reads the evidence. A run counts once, after the last edit: evidence from before the change proves nothing about it, and re-running unchanged code proves nothing twice. And the author of a claim is the worst judge of it — when one session wrote both the code and its tests, the tests describe the code, and the constraint has to come from elsewhere: a test written first, a case somebody else wrote, a falsification pass, or a reviewer who is handed the change and the requirement but not the reasoning, because the reasoning is what talks a reviewer into agreeing. In a coding agent this becomes mechanism rather than advice: a hook that runs `t.sh run` before the turn is allowed to end, and a fresh-context subagent asked to find what is wrong rather than whether it is good.
+
+The report of a run names the commands, their statuses, and what could not be checked, in that order. The phrases that reliably precede a false claim — "should be fine", "probably works", "looks correct", "just this once", "the agent said it passed", "obviously correct", and the "Done!" that arrives before the command does — are worth treating as a signal to go and run the command instead. Skipping the run is not a shortcut; a claim made without it is a claim made up.
