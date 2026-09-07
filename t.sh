@@ -19,14 +19,16 @@
 #                             INCONCLUSIVE, exit 89, and git's session log is kept
 #   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
-#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
+#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
 #                             break one guard at a time, as written by hand in FILE
 #                             (default tests/defects.sh), and require the suite to notice.
 #                             A defect the suite survives names something nobody checks.
 #                             Each run is held to a deadline, five times the unbroken
 #                             suite's own time or twenty seconds, or --timeout. What was
 #                             found goes under DIR (default falsify.out): one file of
-#                             names per verdict, a log per defect, and results.json
+#                             names per verdict, a log per defect, and results.json. A
+#                             defect in a test, vendored or generated file is refused,
+#                             because it proves nothing, unless --any-file says otherwise
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -662,6 +664,20 @@ count_occurrences() {
   printf '%d' "$n"
 }
 
+# A defect aimed at a test file proves nothing: the test file is executed, so the edit is
+# "caught" by whatever it breaks, and the report reads as coverage the suite does not
+# have. Vendored and generated code is nobody's guard either. The shapes are the usual
+# ones; --any-file is for a list that knows better.
+looks_like_test_file() {
+  case "$1" in
+    tests/* | test/* | spec/* | __tests__/* | */tests/* | */test/* | */spec/* | */__tests__/*) return 0 ;;
+    *_test.* | *.test.* | *.spec.* | test_*.py | */test_*.py | *_spec.rb) return 0 ;;
+    vendor/* | node_modules/* | third_party/* | */vendor/* | */node_modules/* | */third_party/*) return 0 ;;
+    *_pb2.py | *.pb.go | *.generated.* | *.g.dart) return 0 ;;
+  esac
+  return 1
+}
+
 # A JSON string literal, for results.json: a consequence sentence may carry quotes
 json_str() {
   local s="$1"
@@ -674,13 +690,17 @@ json_str() {
 }
 
 cmd_falsify() {
-  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out"
+  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out" any_file=""
   local -a pass=()
   while (($#)); do
     case "$1" in
       -d)
         defects="${2:?-d needs a file}"
         shift 2
+        ;;
+      --any-file)
+        any_file=1
+        shift
         ;;
       --out)
         out="${2:?--out needs a directory}"
@@ -765,7 +785,13 @@ cmd_falsify() {
   ((${#DEF_NAME[@]} > 0)) || die "falsify: $defects declared no defects — an empty list proves nothing"
 
   local -a files=()
-  local f
+  local f i
+  if [[ -z "$any_file" ]]; then
+    for i in "${!DEF_NAME[@]}"; do
+      looks_like_test_file "${DEF_FILE[$i]}" || continue
+      die "falsify: ${DEF_NAME[$i]} edits ${DEF_FILE[$i]}, which looks like a test, vendored or generated file — a defect there proves nothing about the suite (--any-file if the list knows better)"
+    done
+  fi
   for f in "${DEF_FILE[@]}"; do
     [[ " ${files[*]-} " == *" $f "* ]] || files+=("$f")
   done

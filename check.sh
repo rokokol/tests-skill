@@ -716,6 +716,16 @@ DEFECTS
   : >"$fal/tests/empty.sh"
   (cd "$fal" && tsh falsify -d tests/empty.sh -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "falsify accepted an empty defect list, which proves nothing (got $status)"
+  # A defect in a test file is "caught" by whatever it breaks and reads as coverage
+  printf 'helper=1\n' >"$fal/tests/helper.sh"
+  git -C "$fal" add tests/helper.sh && git -C "$fal" commit -q -m "a helper under tests/"
+  printf "defect 'helper/edited' 'tests/helper.sh' 'helper=1' 'helper=2' 'nothing'\n" >"$fal/tests/in-tests.sh"
+  status=0
+  (cd "$fal" && tsh falsify -d tests/in-tests.sh -l "$work/logs" --out "$work/fo2" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "falsify accepted a defect aimed at a test file (got $status)"
+  status=0
+  (cd "$fal" && tsh falsify -d tests/in-tests.sh --any-file -l "$work/logs" --out "$work/fo2" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 83)) || fail "falsify with --any-file did not run the defect in the test file (got $status, want 83)"
 
   echo "== the help text lists every subcommand the dispatcher accepts"
   # The usage text is read out of this file's own header by line range, so it drifts the
@@ -883,6 +893,8 @@ check_proofs() {
       sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
+    plant behaviour anyfile "aimed at a test file" "a falsify that edits test files" \
+      sed t.sh 's/^      looks_like_test_file "\${DEF_FILE\[\$i\]}" || continue$/      continue # planted/' '# planted'
     plant behaviour nodeadline "nothing timed it out" "a falsify with no deadline" \
       sed t.sh 's/^      if \[\[ -n "\$deadline" \]\] \&\& ((waited >= deadline \* 10)); then$/      if false; then # planted/' '# planted'
     plant behaviour surrender "want 89" "a bisect that reports an all-skipped history as resolved" \
@@ -947,8 +959,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=19 ;;
-    all) want_planted=31 ;;
+    behaviour) want_planted=20 ;;
+    all) want_planted=32 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
