@@ -1,0 +1,17 @@
+A healthy `cargo test` on a crate where every target has a test, unit and doc-test both, captured from a real run. No entry in markers/rust.txt may match anything here: `0 filtered out` is what every full run prints, and a marker on it reddened every healthy run before this fixture existed.
+
+   Compiling clean v0.1.0 (/tmp/tmp.g0FxQHTfEe/rs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src/lib.rs (target/debug/deps/clean-5584f88fed27f620)
+
+running 1 test
+test tests::inc_adds_one ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests clean
+
+running 1 test
+test src/lib.rs - inc (line 3) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s

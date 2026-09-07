@@ -171,19 +171,26 @@ check_lint() {
   done < <(grep -rhoE '(^|\$ )t\.sh [a-z-]+[^|`]*' README.md SKILL.md references/ | sed 's/^\$ //')
   ((examples > 0)) || fail "no t.sh examples were found in the docs — the extractor is broken"
 
-  echo "== every marker catches its own fixture, and no default one cries on a healthy run"
+  echo "== every marker catches its own fixture, and none cries on a healthy run"
   # Read from the same files `t.sh run` reads, never from a second copy of the list: two
   # copies disagree within a month, and then the gate is testing the copy.
   #
-  # Both halves of the rule apply to markers/default.txt. Only the first applies to the
-  # per-ecosystem sets: they exist precisely because some of their lines DO appear in healthy
-  # runs (`[no test files]` in a Go workspace), which is why they are opted into rather than
-  # on by default.
+  # Every marker must catch a line in its set's lying fixture, and stay quiet on a real
+  # healthy run of the tool it is for, kept under tests/fixtures/clean/. The default set
+  # applies to every run, so it must stay quiet on every ecosystem's healthy run. An
+  # ecosystem set need only stay quiet on its own: `[no test files]` appears in a healthy
+  # Go workspace, which is why the Go set is opted into, but it must not appear in the run
+  # the Go set is meant for — a module where every package has tests. The rust set once
+  # carried `0 filtered out`, which every healthy cargo test prints, and nothing said so
+  # until the healthy run was kept.
   set_count=0
   for set_file in markers/*.txt; do
     name=$(basename "$set_file" .txt)
     fixture="tests/fixtures/lying/$name.log"
+    clean="tests/fixtures/clean/$name.log"
     [[ -r "$fixture" ]] || fail "$set_file has no fixture at $fixture — its entries are unproven"
+    [[ "$name" == default || -r "$clean" ]] ||
+      fail "$set_file has no healthy run at $clean — nothing proves its entries stay quiet on one"
     markers=()
     while IFS= read -r m; do
       [[ -z "$m" || "$m" == \#* ]] && continue
@@ -195,8 +202,13 @@ check_lint() {
       grep -qiF -- "$m" "$fixture" ||
         fail "the marker '$m' matches nothing in $fixture — a dead entry guards nothing"
       if [[ "$name" == default ]]; then
-        ! grep -qiF -- "$m" tests/fixtures/clean.log ||
-          fail "the default marker '$m' fires on tests/fixtures/clean.log — it would redden healthy runs"
+        for healthy in tests/fixtures/clean/*.log; do
+          ! grep -qiF -- "$m" "$healthy" ||
+            fail "the default marker '$m' fires on $healthy — it would redden healthy runs"
+        done
+      else
+        ! grep -qiF -- "$m" "$clean" ||
+          fail "the marker '$m' fires on $clean, its own healthy run — it would redden every run it is meant for"
       fi
     done
     set_count=$((set_count + 1))
@@ -1017,6 +1029,11 @@ check_proofs() {
       append markers/default.txt $'a marker matching nothing\n'
     plant lint noisy "it would redden healthy runs" "a marker that fires on a healthy run" \
       append markers/default.txt $'test session starts\n'
+    # In the set's lying fixture too, or the copy fails on the dead-entry rule first
+    plant lint noisy-ecosystem "its own healthy run" "an ecosystem marker that fires on its own healthy run" \
+      append markers/rust.txt $'test result: ok.\n'
+    plant lint no-healthy-run "has no healthy run at" "a marker set with no healthy run to stay quiet on" \
+      rm tests/fixtures/clean/go.log
     plant lint unproven "has no fixture at" "a marker set with no fixture" \
       write markers/invented.txt $'no tests ran\n'
     plant lint unwatched "watched by nobody" "action pins with no dependabot" \
@@ -1126,14 +1143,23 @@ check_proofs() {
     printf 'No Tests Ran in 0.01s\n' >>"$work/plant-dupe/tests/fixtures/lying/go.log"
     catches "$work/plant-dupe" "repeats a marker that markers/default.txt" "a set repeating a default marker"
     planted=$((planted + 1))
+
+    # A default marker quiet on the pytest run and loud on the ctest one: the rule has to
+    # look at every ecosystem's healthy run, not the one it happened to start with
+    echo "== able to fail: a default marker that fires on another ecosystem's healthy run"
+    copy "$work/plant-noisy-elsewhere"
+    printf 'Total Test time\n' >>"$work/plant-noisy-elsewhere/markers/default.txt"
+    printf 'Total Test time (real) =   0.00 sec\n' >>"$work/plant-noisy-elsewhere/tests/fixtures/lying/default.log"
+    catches "$work/plant-noisy-elsewhere" "fires on tests/fixtures/clean/cpp.log" "a default marker that fires on another ecosystem's healthy run"
+    planted=$((planted + 1))
   fi
 
   # The table above is the proof; a table that lost its rows would prove nothing while
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
-    lint) want_planted=13 ;;
+    lint) want_planted=16 ;;
     behaviour) want_planted=26 ;;
-    all) want_planted=39 ;;
+    all) want_planted=42 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

@@ -1,0 +1,4 @@
+A healthy `bats --print-output-on-failure tests/` with one test, captured from a real run. No entry in markers/shell.txt may match anything here.
+
+1..1
+ok 1 inc adds one

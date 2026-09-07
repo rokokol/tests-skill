@@ -1,0 +1,11 @@
+A healthy `cmake --build` followed by `ctest --test-dir build --output-on-failure` with one registered test, captured from a real run. No entry in markers/cpp.txt may match anything here.
+
+[1/2] Building CXX object CMakeFiles/unit_tests.dir/test.cpp.o
+[2/2] Linking CXX executable unit_tests
+Test project /tmp/tmp.9p8xfw6TCo/build
+    Start 1: inc_adds_one
+1/1 Test #1: inc_adds_one .....................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec

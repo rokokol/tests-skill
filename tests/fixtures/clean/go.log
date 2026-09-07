@@ -1,0 +1,3 @@
+A healthy `go test ./... -count=1 -race` on a module where every package has a test, captured from a real run. No entry in markers/go.txt may match anything here.
+
+ok  	example.com/clean	1.010s

@@ -1,0 +1,9 @@
+A healthy `vitest run` with one test file, captured from a real run. No entry in markers/node.txt may match anything here.
+
+ RUN  v5.0.0 /tmp/tmp.p5oCTR3SHy/node
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:32:27
+   Duration  101ms (transform 46%, import 32%, worker 12%, tests 9%, environment 1%)
