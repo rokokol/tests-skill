@@ -903,19 +903,47 @@ DEFECTS
   (cd "$prove_repo" && tsh prove no-such-ref -l "$work/logs" -- sh tests/suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "prove accepted a ref that does not exist (got $status)"
 
-  echo "== the help text lists every subcommand the dispatcher accepts"
-  # The usage text is read out of this file's own header by line range, so it drifts the
-  # moment a subcommand is added without moving the range. This is that drift check.
-  help=$(tsh --help)
+  echo "== the help is complete: every subcommand, every flag, every variable, every exit code"
+  # The help is hand-written text and the parsers are code, and the two drift the moment
+  # a flag is added to one and not the other. So the gate reads the truth out of the code
+  # — the dispatcher's subcommands, each parser's flags, the T_ variables the script reads,
+  # the codes it returns — and requires each to be in the help. Extractors that find
+  # nothing fail, because an empty list passes every loop.
+  help=$(tsh help)
   subs=()
   while IFS= read -r sub; do subs+=("$sub"); done < <(sed -n 's/^  \([a-z-]*\)) cmd_[a-z_]*.*/\1/p' t.sh)
-  # An extractor that matches nothing would leave the loop below empty and read as "no
-  # drift" — the exact way a broken check goes on looking like a working one
-  ((${#subs[@]} >= 2)) || fail "only ${#subs[@]} subcommand(s) could be read out of t.sh — the extractor is broken"
+  ((${#subs[@]} >= 4)) || fail "only ${#subs[@]} subcommand(s) could be read out of t.sh — the extractor is broken"
   for sub in "${subs[@]}"; do
     grep -qF "t.sh $sub" <<<"$help" ||
-      fail "t.sh dispatches '$sub' but its help never mentions it — the usage line range has drifted"
+      fail "t.sh dispatches '$sub' but its help never mentions it"
+    sub_help=$(tsh help "$sub") || fail "t.sh help $sub refused"
+    flags=0
+    while IFS= read -r flag; do
+      [[ -n "$flag" ]] || continue
+      flags=$((flags + 1))
+      # A `]` is literal only first in a bracket expression, and `\]` is not an escape
+      # there — GNU grep 3.12 read the escaped form as the bracket's end
+      grep -qE -- "(^|[[:space:][])${flag}([][:space:],]|$)" <<<"$sub_help" ||
+        fail "t.sh $sub accepts $flag but 't.sh help $sub' never mentions it"
+    done < <(flags_of "$sub")
+    [[ "$sub" == help ]] || ((flags > 0)) || fail "no flags could be read out of cmd_$sub — the extractor is broken"
   done
+  variables=0
+  while IFS= read -r var; do
+    variables=$((variables + 1))
+    grep -qF -- "$var" <<<"$help" || fail "t.sh reads $var but its help never mentions it"
+  done < <(grep -oE '(^|[^A-Z_])T_[A-Z_]+' t.sh | sed 's/^[^T]//' | sort -u)
+  ((variables >= 4)) || fail "only $variables T_ variable(s) could be read out of t.sh — the extractor is broken"
+  codes_help=$(tsh help codes)
+  codes=0
+  while IFS= read -r code; do
+    codes=$((codes + 1))
+    grep -qE "^  $code  " <<<"$codes_help" || fail "t.sh exits $code but 't.sh help codes' never lists it"
+  done < <(grep -oE '(return|exit) (6[4-9]|7[0-9]|8[0-9])( |$)' t.sh | awk '{print $2}' | sort -u)
+  ((codes >= 6)) || fail "only $codes exit code(s) could be read out of t.sh — the extractor is broken"
+  status=0
+  tsh help wat >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "t.sh help accepted a topic it does not have (got $status)"
 }
 
 # The steps below prove the checks above can fail, by breaking one thing at a time in a
@@ -1066,6 +1094,14 @@ check_proofs() {
       sed t.sh 's/^set -uo pipefail$/set -u/; s/local -a ps=("${PIPESTATUS\[@\]}")/local -a ps=($?)/' 'local -a ps=($?)'
     plant behaviour undocumented "its help never mentions it" "a subcommand missing from the help" \
       awk t.sh '/^  flaky\) cmd_flaky/ && !done { print "  wat) cmd_run \"$@\" ;;"; done=1 } { print }' 'wat) cmd_run'
+    # Only the help text is touched: the parser keeps --any-file, so the flag is real and
+    # undocumented, which is the drift being caught
+    plant behaviour undocumented-flag "never mentions it" "a flag missing from its subcommand's help" \
+      sed t.sh '/--any-file)$/!s/--any-file/--anyfile/g' '--anyfile'
+    plant behaviour undocumented-variable "never mentions it" "a variable missing from the help" \
+      sed t.sh 's/^  T_LOGFILE    /  T_LOGFLIE    /' 'T_LOGFLIE'
+    plant behaviour undocumented-code "never lists it" "an exit code missing from the help" \
+      sed t.sh 's/^  86  the runs disagreed/  68  the runs disagreed/' '  68  the runs'
     plant behaviour raw "should be 1 to git bisect" "a probe returning a raw signal status" \
       sed t.sh 's/^        \*) return 1 ;;$/        *) return "$status" ;; # planted/' '# planted'
     # Dropping the `printf x` lets command substitution eat the file's last newline, so
@@ -1168,8 +1204,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=17 ;;
-    behaviour) want_planted=26 ;;
-    all) want_planted=43 ;;
+    behaviour) want_planted=29 ;;
+    all) want_planted=46 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

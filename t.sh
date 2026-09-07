@@ -1,71 +1,17 @@
 #!/usr/bin/env bash
 # t.sh — the local test harness: one subcommand per question a test run raises.
 #
-#   t.sh run [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
-#                             run CMD once. The status reported is CMD's own, the whole
-#                             output is kept in a log file, and the log is read even when
-#                             CMD exited 0 — because that is not always a success.
-#                             -m adds a marker set from markers/ (a name) or a file path;
-#                             markers/default.txt always applies. The kind of verdict —
-#                             pass, fail or lied — is written beside the log as LOG.verdict
-#   t.sh flaky N [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
-#                             run CMD N times and report how many runs disagreed with the
-#                             first. Evidence that a test is unstable, never a way to
-#                             tolerate one
-#   t.sh bisect GOOD [-b BUILD] [-m SET] [-p PATTERN] [-t N] [--first-parent] [--no-checkout] -- CMD...
-#                             git bisect run between GOOD and HEAD, judging each commit
-#                             with run. A commit that cannot be built is skipped rather
-#                             than blamed; when only such commits are left the answer is
-#                             INCONCLUSIVE, exit 89, and git's session log is kept
-#   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
-#                             internal: the single-commit verdict `git bisect run` calls
-#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--since REF] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
-#                             break one guard at a time, as written by hand in FILE
-#                             (default tests/defects.sh), and require the suite to notice.
-#                             A defect the suite survives names something nobody checks.
-#                             Each run is held to a deadline, five times the unbroken
-#                             suite's own time or twenty seconds, or --timeout. What was
-#                             found goes under DIR (default falsify.out): one file of
-#                             names per verdict, a log per defect, and results.json. A
-#                             defect in a test, vendored or generated file is refused,
-#                             because it proves nothing, unless --any-file says otherwise.
-#                             --since REF runs only the defects in files changed since
-#                             REF, for a pull request; it is a filter, not a proof.
-#                             --worktree edits a checkout in a git worktree instead of
-#                             the files in front of you, so an editor, a watcher or a
-#                             commit made mid-run cannot meet a mutant
-#   t.sh prove [-b BUILD] [--timeout SECONDS] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [REF] -- CMD...
-#                             take the fix out of one commit (default HEAD), keep its
-#                             tests, and require the suite to go red: a commit that adds
-#                             a test and the code it pins has to demonstrate itself.
-#                             proven, or VACUOUS when the tests pass without the fix
+#   run      did it pass — the command's own status, the whole log kept and read even at 0
+#   flaky    do repeated runs of the same code disagree
+#   bisect   which commit broke it, skipping the ones that cannot answer
+#   falsify  which guards the suite would not notice being broken
+#   prove    does a commit's own test go red when its fix is taken away
 #
-# The command is always explicit, after `--`. Nothing here guesses what your suite is:
-# a harness that guesses runs the wrong thing on the day it matters.
-#
-# A repository may keep its POLICY — marker sets, excused lines, log directory — in
-# ./tests/t.conf, which is read from the current directory only. It never carries the
-# command. See the config section below, or `allow`/`markers`/`pattern`/`logdir`.
-#
-# Exit status: CMD's own, passed through unchanged, except a band no test runner uses.
-# 2, 3 and 4 were tried first and collide: GNU make exits 2 on any error, pytest uses
-# 2–5, cargo-nextest exits 4 for "no tests ran", which is the very thing run detects.
-#   64  a usage error — a flag, the config, a missing --, an allow regex grep rejects
-#   70  the harness itself failed — a log it cannot write, a file it cannot put back
-#   79  CMD exited 0 but its log says it did not do what a pass claims (run)
-#   83  at least one defect SURVIVED: the suite did not notice it (falsify); the tests of
-#       the commit pass without its fix, VACUOUS (prove)
-#   84  a defect, or the fix taken away, never let the suite finish (falsify, prove)
-#   85  the suite was red, or never really ran, before any edit was made (falsify, prove)
-#   86  the runs disagreed with each other (flaky)
-#   87  the defect list has drifted: a find text no longer matches exactly once, or a
-#       defect declared as one nothing can catch was caught (falsify)
-#   88  a defect, or the fix taken away, only stopped the build (falsify, prove)
-#   89  only commits that could not answer are left between good and bad (bisect)
+# `t.sh help [SUBCOMMAND]` is the reference: every flag, the T_ variables, the exit codes.
+# The command is always explicit, after `--`; nothing here guesses what your suite is.
+# A repository keeps its policy — marker sets, excused lines, log directory — in
+# ./tests/t.conf, read from the current directory only, and never the command.
 set -uo pipefail
-
-# The header above, up to the first line that is not a comment, is the help text
-usage() { awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; }
 
 # 64 is EX_USAGE and 70 is EX_SOFTWARE in sysexits(3): the caller asked wrongly, or the
 # harness broke. Neither is CMD's status, and a probe that skips on 64 must not skip on 70.
@@ -1388,6 +1334,182 @@ cmd_prove() {
   esac
 }
 
+# The reference, as text rather than as the file's header: a header has to read as a
+# description of the file, a reference has to be complete, and one text cannot be both.
+# The gate reads every flag out of every parser, every T_ variable out of this file and
+# every exit code out of every return, and requires each to appear here.
+help_general() {
+  cat <<'EOF'
+t.sh — the local test harness: one subcommand per question a test run raises
+
+  t.sh run [FLAGS] -- CMD...           did it pass: CMD's own status, the whole log kept and read even at 0
+  t.sh flaky N [FLAGS] -- CMD...       do N runs of the same code disagree
+  t.sh bisect GOOD [FLAGS] -- CMD...   which commit between GOOD and HEAD broke it
+  t.sh falsify [FLAGS] [FILTER] -- CMD...
+                                       which guards the suite would not notice being broken
+  t.sh prove [FLAGS] [REF] -- CMD...   does the commit's own test go red when its fix is taken away
+  t.sh help [SUBCOMMAND | codes]       this, or one subcommand's flags, or the exit codes
+  t.sh bisect-probe [FLAGS] -- CMD...  internal: the single-commit verdict git bisect run calls
+
+The command is always explicit, after `--`: a harness that guesses what your suite is
+runs the wrong thing on the day it matters. The flags every subcommand forwards to run:
+
+  -l DIR       where the logs go (default .test-logs, or `logdir` in the policy)
+  -m SET       add a marker set: a name from markers/ beside this script, or a file path;
+               markers/default.txt always applies, and a set that resolves to nothing refuses
+  -p PATTERN   add one marker for this run, matched case-insensitively as a fixed string
+  -t N         how many lines of the log to show after a verdict that is not a pass (run: 40)
+
+A repository keeps its policy in ./tests/t.conf, read from the current directory only and
+never the command: `markers NAME`, `pattern TEXT`, `allow REGEX`, `logdir PATH`. An unknown
+key, a key with no value or a set that does not exist stops the run and names the line.
+
+The environment:
+
+  T_ALLOW      an extended regex; matching log lines are excused before the scan. Overrides
+               the policy's `allow`. A regex grep cannot compile is refused, never ignored
+  T_LOGDIR     where the logs go; -l overrides it, the policy's `logdir` is under it
+  T_LOGFILE    one log file for one run, instead of a name chosen under the log directory
+  T_CONFIG     another policy file; T_CONFIG= (empty) reads none
+
+Exit status: CMD's own, passed through unchanged, and the harness's own verdicts in a band
+no test runner uses — `t.sh help codes`.
+EOF
+}
+
+help_run() {
+  cat <<'EOF'
+t.sh run [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
+
+Runs CMD once. The status reported is CMD's own — read from PIPESTATUS, never from the
+tee that keeps the log — and the log is read even when CMD exited 0, because that is not
+always a success: `collected 0 items`, `no tests ran`, a traceback in a passing run. The
+markers of such a run live in markers/*.txt as data; markers/default.txt always applies,
+-m adds a set, -p adds one line.
+
+The kind of verdict — pass, fail or lied — is written beside the log as LOG.verdict, one
+word, so a wrapper can read it without guessing from the number.
+
+Exit: CMD's own; 79 when CMD exited 0 but its log says otherwise; 64 for a usage error;
+70 when the log could not be written.
+EOF
+}
+
+help_flaky() {
+  cat <<'EOF'
+t.sh flaky N [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
+
+Runs CMD N times, N at least 2, and reports how many runs disagreed with the first, with
+the first divergent log named. Evidence that a test is unstable, never a way to tolerate
+one: nothing here retries, and the logs of every run are kept under one directory.
+
+Exit: the runs' common status when they agree; 86 when they disagreed; 64 for a usage
+error; 70 when a run produced no verdict at all.
+EOF
+}
+
+help_bisect() {
+  cat <<'EOF'
+t.sh bisect GOOD [-b BUILD] [-m SET] [-p PATTERN] [-t N] [--first-parent] [--no-checkout] -- CMD...
+
+git bisect run between GOOD and HEAD, judging each commit with run. -b BUILD runs first
+at every commit, and a commit that does not build is skipped rather than blamed; so is one
+whose run exited 0 while its log says nothing ran, and one where the runner is not there.
+A crash of the suite is bad; a Ctrl-C is passed through so git aborts. --first-parent and
+--no-checkout are git's own. The working tree must be clean and no bisect may already be
+in progress; the tree is put back afterwards, interrupt included, and git's session log
+is kept beside the run's logs as bisect.log for `git bisect replay`.
+
+Exit: 0 with the first bad commit named on its own line; 89 when only commits that could
+not answer are left between good and bad; 64 for a usage error; 70 when git failed.
+
+t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
+
+Internal: the single-commit verdict git bisect run calls, in git's vocabulary — 0 good,
+1 bad, 125 cannot answer.
+EOF
+}
+
+help_bisect_probe() { help_bisect; }
+
+help_falsify() {
+  cat <<'EOF'
+t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--since REF] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
+
+Breaks one guard at a time, as written by hand in FILE (default tests/defects.sh, see
+templates/defects.sh), and requires the suite to notice. FILTER runs only the defects
+whose name contains it. Nothing is generated, and the defect list is sourced: it is code.
+
+  -d FILE             the defect list
+  -b BUILD            a command that must succeed before the suite is asked; an edit that
+                      stops it is `unusable`, never credited to the suite
+  --timeout SECONDS   the deadline for one run; default five times the unbroken suite's own
+                      time or twenty seconds, whichever is more
+  --out DIR           where the findings go (default falsify.out): one file of names per
+                      verdict, a log per defect, results.json, written as the run goes
+  --since REF         only the defects in files changed since REF — a filter for a pull
+                      request, not a proof; an empty selection is said out loud, exit 0
+  --worktree          edit a checkout of HEAD in a git worktree instead of the files in
+                      front of you, so an editor, a watcher or a commit cannot meet a mutant
+  --any-file          allow a defect in a test, vendored or generated file, which is
+                      otherwise refused because it proves nothing about the suite
+
+Verdicts: caught, SURVIVED with the file, the line and the edit, expected (declared with
+`expect survived REASON`), stale, unusable, TIMEDOUT. On a GitHub runner each finding is
+also an annotation on its file and line.
+
+Exit: 0 all caught; 83 a survivor; 84 a timeout; 85 the suite red or never really run
+before any edit; 87 the list drifted, or a declared exception was disproved; 88 an edit
+only stopped the build; 64 for a usage error; 70 when a file could not be written back.
+EOF
+}
+
+help_prove() {
+  cat <<'EOF'
+t.sh prove [-b BUILD] [--timeout SECONDS] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [REF] -- CMD...
+
+Takes the fix out of one commit (default HEAD), keeps its tests, and requires the suite
+to go red: a commit that adds a test and the code it pins has to demonstrate itself. The
+commit's files are split the way falsify splits a defect's file — test files stay, the
+rest is the fix, --any-file counts everything as the fix. The suite must be green with
+the fix in first. A commit other than HEAD is proven in a worktree at that commit;
+--worktree does the same for HEAD. -b and --timeout as in falsify.
+
+Exit: 0 proven; 83 VACUOUS, the tests pass without the fix; 84 the suite did not finish;
+85 the suite red or never really run with the fix in; 88 without the fix nothing builds;
+64 when the commit changes no source file, or for any other usage error.
+EOF
+}
+
+help_codes() {
+  cat <<'EOF'
+Exit status: CMD's own, passed through unchanged, and the harness's own verdicts in a band
+no test runner uses. 2, 3 and 4 were tried first and collide: GNU make exits 2 on any
+error, pytest uses 2 to 5, cargo-nextest exits 4 for "no tests ran".
+
+  64  a usage error — a flag, the config, a missing --, an allow regex grep rejects
+  70  the harness itself failed — a log it cannot write, a file it cannot put back
+  79  CMD exited 0 but its log says it did not do what a pass claims (run)
+  83  a defect SURVIVED (falsify); the tests pass without the fix, VACUOUS (prove)
+  84  a defect, or the fix taken away, never let the suite finish (falsify, prove)
+  85  the suite was red, or never really ran, before any edit was made (falsify, prove)
+  86  the runs disagreed with each other (flaky)
+  87  the defect list has drifted, or a declared exception was disproved (falsify)
+  88  a defect, or the fix taken away, only stopped the build (falsify, prove)
+  89  only commits that could not answer are left between good and bad (bisect)
+EOF
+}
+
+cmd_help() {
+  local topic="${1:-}"
+  case "$topic" in
+    '') help_general ;;
+    run | flaky | bisect | bisect-probe | falsify | prove) "help_${topic//-/_}" ;;
+    codes | exit | status) help_codes ;;
+    *) die "help: no such topic '$topic' — run, flaky, bisect, falsify, prove, codes" ;;
+  esac
+}
+
 cmd="${1:-}"
 (($# == 0)) || shift
 case "$cmd" in
@@ -1397,14 +1519,14 @@ case "$cmd" in
   bisect-probe) cmd_bisect_probe "$@" ;;
   falsify) cmd_falsify "$@" ;;
   prove) cmd_prove "$@" ;;
-  -h | --help | help) usage ;;
+  -h | --help | help) cmd_help "$@" ;;
   '')
-    usage >&2
+    help_general >&2
     exit 64
     ;;
   *)
     printf 't.sh: no such subcommand: %s\n\n' "$cmd" >&2
-    usage >&2
+    help_general >&2
     exit 64
     ;;
 esac
