@@ -7,9 +7,14 @@
     { nixpkgs, ... }:
     let
       lib = nixpkgs.lib;
+      # Darwin too: the harness travels to repositories that run CI on macOS, and a
+      # contributor there gets `nix develop -c ./check.sh` rather than a flake that does
+      # not know their system
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
       ];
       forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
