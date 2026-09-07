@@ -374,7 +374,14 @@ cmd_flaky() {
         logdir="${2:?-l needs a directory}"
         shift 2
         ;;
-      -m | -p | -t)
+      -m)
+        # Resolved here as well as in run, so a set that does not exist is refused
+        # before the first of twenty runs rather than inside it
+        resolve_markers "${2:?-m needs a marker set or file}"
+        pass+=("$1" "$2")
+        shift 2
+        ;;
+      -p | -t)
         # Forwarded to run, which validates them. Named here rather than swept up by a
         # catch-all, so the gate can read from this parser which flags flaky accepts.
         pass+=("$1" "${2:?$1 needs a value}")
@@ -393,8 +400,17 @@ cmd_flaky() {
   local i status baseline="" differed=0 agreed=0 first_divergence=""
   for ((i = 1; i <= n; i++)); do
     status=0
-    T_LOGFILE="$stamp/run-$i.log" cmd_run -t 0 -l "$stamp" "${pass[@]+"${pass[@]}"}" "$@" \
-      >/dev/null 2>&1 || status=$?
+    # In a subshell, so a `die` inside run ends that run and not this loop; and with its
+    # stderr kept, because a refusal that went to /dev/null with the command's output
+    # once left flaky exiting without a word
+    (T_LOGFILE="$stamp/run-$i.log" cmd_run -t 0 -l "$stamp" "${pass[@]+"${pass[@]}"}" "$@") \
+      >/dev/null 2>"$stamp/run-$i.err" || status=$?
+    # No sidecar means run never reached a verdict — it refused, or it died. Neither is
+    # a result to compare the other runs against.
+    if [[ ! -e "$stamp/run-$i.log.verdict" ]]; then
+      head -3 "$stamp/run-$i.err" >&2
+      fatal "flaky: run $i produced no verdict (exit $status) — the harness could not run the command"
+    fi
     if [[ -z "$baseline" ]]; then
       baseline="$status"
       agreed=1

@@ -419,6 +419,21 @@ status=0
 status=0
 ./t.sh flaky 3 -l "$work/logs" sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "flaky accepted a command that was not put after -- (got $status)"
+# A refusal has to be heard. flaky mutes the command's output for each run, and for a
+# while muted run's own refusals with it: `flaky 3 -x` exited 2 without a word.
+status=0
+./t.sh flaky 3 -x -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
+((status == 64)) || fail "flaky accepted an unknown flag (got $status)"
+grep -q 'flaky:' "$work/flaky.err" || fail "flaky refused an unknown flag without saying so"
+status=0
+./t.sh flaky 3 -m no-such-set -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
+((status == 64)) || fail "flaky accepted a marker set that does not exist (got $status)"
+[[ -s "$work/flaky.err" ]] || fail "flaky refused a marker set silently"
+# And a refusal only run can make, once the loop has started, is shown too
+status=0
+T_ALLOW='expected(' ./t.sh flaky 3 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
+((status == 70)) || fail "flaky carried on after run refused its allow regex (got $status)"
+grep -q 'allow' "$work/flaky.err" || fail "flaky hid run's refusal of the allow regex"
 
 echo "== bisect names the commit that broke it, across a history holding an unbuildable one"
 # A throwaway history where the answer is known in advance. The commit in the middle that
@@ -759,6 +774,15 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/badallow/t.sh"
   ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
   catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
+
+  echo "== the heard-refusal check is able to fail: flaky muting run's stderr with the command's"
+  copy "$work/muted"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed 's|>/dev/null 2>"\$stamp/run-\$i.err"|>/dev/null 2>/dev/null|' t.sh >"$work/muted/t.sh.new" &&
+    mv "$work/muted/t.sh.new" "$work/muted/t.sh"
+  chmod +x "$work/muted/t.sh"
+  grep -qF '>/dev/null 2>/dev/null' "$work/muted/t.sh" || fail "the muted-refusal fixture was not planted"
+  catches "$work/muted" "hid run's refusal" "a flaky that mutes the harness's own refusals"
 
   echo "== the -t check is able to fail: a tail length taken on trust"
   copy "$work/anytail"
