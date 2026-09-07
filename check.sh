@@ -24,6 +24,18 @@ fail() {
   exit 1
 }
 
+# The throwaway repositories below must not inherit whatever git config this machine has:
+# a global commit.gpgsign would try to sign their commits, a core.hooksPath would run
+# somebody's hooks in them, and the gate would go red for a reason outside the repository
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+[[ -z "$(git config --global --list 2>/dev/null)" ]] ||
+  fail "the gate can see a global git config — its fixture repositories would inherit it"
+
+# Every t.sh below runs under the bash running this gate, not under whatever bash the
+# shebang finds: on a macOS runner the gate is started as `/bin/bash ./check.sh` to prove
+# the harness on the 3.2 that macOS ships, while `env bash` would find Homebrew's 5.
+tsh() { "$BASH" "$HERE/t.sh" "$@"; }
+
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
@@ -233,11 +245,11 @@ done
 
 echo "== run refuses a marker set that would leave it checking nothing"
 status=0
-./t.sh run -t 0 -l "$work/logs" -m no-such-set -- true >/dev/null 2>&1 || status=$?
+tsh run -t 0 -l "$work/logs" -m no-such-set -- true >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "run accepted a marker set that does not exist (got $status)"
 : >"$work/empty-markers.txt"
 status=0
-./t.sh run -t 0 -l "$work/logs" -m "$work/empty-markers.txt" -- true >/dev/null 2>&1 || status=$?
+tsh run -t 0 -l "$work/logs" -m "$work/empty-markers.txt" -- true >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "run accepted an empty marker set, which reads as a working check (got $status)"
 
 echo "== a repository's own policy applies, and a broken one stops the run"
@@ -251,7 +263,7 @@ in_conf() { # in_conf EXPECTED DESCRIPTION -- CMD...
   local expected="$1" what="$2"
   shift 2
   local got=0
-  (cd "$conf" && "$HERE/t.sh" run -t 0 -l "$work/logs" "$@") >/dev/null 2>&1 || got=$?
+  (cd "$conf" && tsh run -t 0 -l "$work/logs" "$@") >/dev/null 2>&1 || got=$?
   ((got == expected)) || fail "$what: expected $expected, got $got"
 }
 policy 'markers rust'
@@ -266,7 +278,7 @@ in_conf 64 "an allow regex the config names but grep cannot compile refuses" -- 
 # find one subcommand writing somewhere else
 policy 'logdir .from-config'
 rm -rf "$conf/.from-config"
-(cd "$conf" && "$HERE/t.sh" flaky 2 -- sh -c 'echo "1 passed"; exit 0') >/dev/null 2>&1 || :
+(cd "$conf" && tsh flaky 2 -- sh -c 'echo "1 passed"; exit 0') >/dev/null 2>&1 || :
 [[ -d "$conf/.from-config" ]] || fail "flaky ignored the log directory the config names"
 rm -rf "$conf/.from-config"
 policy 'command cargo test'
@@ -280,7 +292,7 @@ in_conf 0 "a repository with no config is the normal case" -- sh -c 'echo "47 pa
 # The template is the thing people copy, so it has to parse — an example config that the
 # harness refuses would teach the format wrong on the first try
 status=0
-T_CONFIG=templates/t.conf ./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo "47 passed"; exit 0' \
+T_CONFIG=templates/t.conf tsh run -t 0 -l "$work/logs" -- sh -c 'echo "47 passed"; exit 0' \
   >/dev/null 2>&1 || status=$?
 ((status == 0)) || fail "templates/t.conf is not a config t.sh accepts (got $status)"
 
@@ -292,19 +304,19 @@ echo "== a marker file checked out with CRLF does not turn every line into a fin
 crlf_markers="$work/crlf-markers.txt"
 printf '# a comment\r\n\r\nno tests ran\r\ncollected 0 items\r\n' >"$crlf_markers"
 status=0
-./t.sh run -t 0 -l "$work/logs" -m "$crlf_markers" \
+tsh run -t 0 -l "$work/logs" -m "$crlf_markers" \
   -- sh -c 'printf "Compiling windows-link v0.2.1\r\ntest result: ok. 12 passed\r\n"; exit 0' \
   >/dev/null 2>&1 || status=$?
 ((status == 0)) || fail "a CRLF marker file reddened a healthy CRLF run (got $status)"
 status=0
-./t.sh run -t 0 -l "$work/logs" -m "$crlf_markers" \
+tsh run -t 0 -l "$work/logs" -m "$crlf_markers" \
   -- sh -c 'printf "collected 0 items\r\n"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 79)) || fail "a CRLF marker file stopped catching what it names (got $status)"
 
 echo "== run reports the command's own status, where a pipe would report zero"
 # The whole reason this harness exists: `cmd | tail` exits 0 for a suite that just failed
 status=0
-./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo working; exit 7' >/dev/null 2>&1 || status=$?
+tsh run -t 0 -l "$work/logs" -- sh -c 'echo working; exit 7' >/dev/null 2>&1 || status=$?
 ((status == 7)) || fail "run reported $status for a command that exited 7"
 # And the premise still holds: in a shell without pipefail — the default everywhere, and
 # what a Makefile recipe or a CI `run:` step gets — that same pipe reports success.
@@ -317,12 +329,12 @@ premise=0
 
 echo "== a run that exits 0 while its log says otherwise is not a pass"
 status=0
-./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0' >/dev/null 2>&1 || status=$?
+tsh run -t 0 -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 79)) || fail "run reported $status for a green run whose log said no tests were collected"
 
 echo "== an honest green run is still a pass"
 status=0
-./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo "47 passed in 1.83s"; exit 0' >/dev/null 2>&1 || status=$?
+tsh run -t 0 -l "$work/logs" -- sh -c 'echo "47 passed in 1.83s"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 0)) || fail "run reported $status for a healthy run — it would cry wolf"
 
 echo "== run writes the kind of verdict it reached beside the log"
@@ -333,24 +345,24 @@ for pair in 'fail:exit 7' 'lied:echo "collected 0 items"; exit 0' 'pass:echo "47
   want=${pair%%:*}
   cmd=${pair#*:}
   rm -f "$work/verdict.log" "$work/verdict.log.verdict"
-  T_LOGFILE="$work/verdict.log" ./t.sh run -t 0 -l "$work/logs" -- sh -c "$cmd" >/dev/null 2>&1 || :
+  T_LOGFILE="$work/verdict.log" tsh run -t 0 -l "$work/logs" -- sh -c "$cmd" >/dev/null 2>&1 || :
   grep -qx "$want" "$work/verdict.log.verdict" 2>/dev/null ||
     fail "run did not record '$want' beside its log for: $cmd"
 done
 
 echo "== T_ALLOW excuses a marker the repository expects, and nothing else"
 status=0
-T_ALLOW='expected: no tests ran' ./t.sh run -t 0 -l "$work/logs" \
+T_ALLOW='expected: no tests ran' tsh run -t 0 -l "$work/logs" \
   -- sh -c 'echo "expected: no tests ran"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 0)) || fail "T_ALLOW did not excuse the line it names (got $status)"
 status=0
-T_ALLOW='something else entirely' ./t.sh run -t 0 -l "$work/logs" \
+T_ALLOW='something else entirely' tsh run -t 0 -l "$work/logs" \
   -- sh -c 'echo "expected: no tests ran"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 79)) || fail "T_ALLOW excused a line it does not name (got $status) — it excuses everything"
 # A regex grep cannot compile used to leave the filtered log empty, and an empty log has
 # no markers: the worst shape, because a typo in the excuse list made every run a pass
 status=0
-T_ALLOW='expected(' ./t.sh run -t 0 -l "$work/logs" \
+T_ALLOW='expected(' tsh run -t 0 -l "$work/logs" \
   -- sh -c 'echo "collected 0 items"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "a regex grep cannot compile was accepted as an allow list (got $status) — an empty filtered log reads as clean"
 
@@ -364,20 +376,20 @@ else
   mkdir -p "$readonly_dir"
   chmod a-w "$readonly_dir"
   status=0
-  ./t.sh run -t 0 -l "$readonly_dir" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
+  tsh run -t 0 -l "$readonly_dir" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
   ((status == 70)) || fail "run started with nowhere to put its log (got $status)"
 fi
 
 echo "== run refuses a command that was not put after --"
 status=0
-./t.sh run sh -c 'exit 0' >/dev/null 2>&1 || status=$?
+tsh run sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "run accepted a command without -- (got $status); guessing is how the wrong thing gets run"
 
 echo "== run refuses a tail length that is not a number, and counts a marker set once"
 status=0
-./t.sh run -t abc -l "$work/logs" -- sh -c 'exit 1' >/dev/null 2>&1 || status=$?
+tsh run -t abc -l "$work/logs" -- sh -c 'exit 1' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "run accepted -t abc (got $status); (( )) reads a word as zero, so the tail silently vanished"
-findings=$(./t.sh run -t 0 -m rust -m rust -l "$work/logs" -- sh -c 'echo "running 0 tests"; exit 0' 2>&1 |
+findings=$(tsh run -t 0 -m rust -m rust -l "$work/logs" -- sh -c 'echo "running 0 tests"; exit 0' 2>&1 |
   grep -c '^  \[running 0 tests\]' || :)
 ((findings == 1)) || fail "a marker set named twice printed its finding $findings times, not once"
 
@@ -395,10 +407,10 @@ done
 
 echo "== flaky calls a command that always agrees with itself stable"
 status=0
-./t.sh flaky 3 -l "$work/logs" -- sh -c 'echo "3 passed"; exit 0' >/dev/null 2>&1 || status=$?
+tsh flaky 3 -l "$work/logs" -- sh -c 'echo "3 passed"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 0)) || fail "flaky called a deterministic green command unstable (got $status)"
 status=0
-./t.sh flaky 3 -l "$work/logs" -- sh -c 'echo "1 failed"; exit 1' >/dev/null 2>&1 || status=$?
+tsh flaky 3 -l "$work/logs" -- sh -c 'echo "1 failed"; exit 1' >/dev/null 2>&1 || status=$?
 ((status == 1)) || fail "flaky did not pass through the status of a command that always fails (got $status)"
 
 echo "== flaky notices a command that disagrees with itself"
@@ -407,31 +419,31 @@ counter="$work/flaky-counter"
 rm -f "$counter"
 status=0
 # shellcheck disable=SC2016  # $0 and $n belong to the inner sh, not to this script
-./t.sh flaky 3 -l "$work/logs" -- \
+tsh flaky 3 -l "$work/logs" -- \
   sh -c 'n=$(cat "$0" 2>/dev/null || echo 0); echo $((n + 1)) >"$0"; test "$n" -eq 0' "$counter" \
   >/dev/null 2>&1 || status=$?
 ((status == 86)) || fail "flaky missed a command whose runs disagreed (got $status)"
 
 echo "== flaky refuses the arguments that would make it meaningless"
 status=0
-./t.sh flaky 1 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
+tsh flaky 1 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "flaky accepted a single run, which cannot show disagreement (got $status)"
 status=0
-./t.sh flaky 3 -l "$work/logs" sh -c 'exit 0' >/dev/null 2>&1 || status=$?
+tsh flaky 3 -l "$work/logs" sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "flaky accepted a command that was not put after -- (got $status)"
 # A refusal has to be heard. flaky mutes the command's output for each run, and for a
 # while muted run's own refusals with it: `flaky 3 -x` exited 2 without a word.
 status=0
-./t.sh flaky 3 -x -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
+tsh flaky 3 -x -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
 ((status == 64)) || fail "flaky accepted an unknown flag (got $status)"
 grep -q 'flaky:' "$work/flaky.err" || fail "flaky refused an unknown flag without saying so"
 status=0
-./t.sh flaky 3 -m no-such-set -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
+tsh flaky 3 -m no-such-set -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
 ((status == 64)) || fail "flaky accepted a marker set that does not exist (got $status)"
 [[ -s "$work/flaky.err" ]] || fail "flaky refused a marker set silently"
 # And a refusal only run can make, once the loop has started, is shown too
 status=0
-T_ALLOW='expected(' ./t.sh flaky 3 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
+T_ALLOW='expected(' tsh flaky 3 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>"$work/flaky.err" || status=$?
 ((status == 70)) || fail "flaky carried on after run refused its allow regex (got $status)"
 grep -q 'allow' "$work/flaky.err" || fail "flaky hid run's refusal of the allow regex"
 
@@ -465,7 +477,7 @@ echo change >"$repo/note"
 commit "bad too, further along" >/dev/null
 
 status=0
-bisect_out=$(cd "$repo" && "$HERE/t.sh" bisect "$first_good" -b 'test -f builds' -- test -f passes 2>&1) ||
+bisect_out=$(cd "$repo" && tsh bisect "$first_good" -b 'test -f builds' -- test -f passes 2>&1) ||
   status=$?
 ((status == 0)) || fail "bisect exited $status on a history it should have resolved:"$'\n'"$bisect_out"
 grep -qF "$first_bad" <<<"$bisect_out" ||
@@ -478,7 +490,7 @@ bisect_logdir=$(sed -n 's/^t.sh: logs for this bisect are in //p' <<<"$bisect_ou
 [[ -f "$bisect_logdir/bisect.log" ]] || fail "bisect did not keep git's session log for a replay"
 # git's own options pass through to git bisect start
 status=0
-bisect_out=$(cd "$repo" && "$HERE/t.sh" bisect "$first_good" --first-parent -b 'test -f builds' -- test -f passes 2>&1) ||
+bisect_out=$(cd "$repo" && tsh bisect "$first_good" --first-parent -b 'test -f builds' -- test -f passes 2>&1) ||
   status=$?
 ((status == 0)) || fail "bisect exited $status with --first-parent on a linear history:"$'\n'"$bisect_out"
 grep -qF "$first_bad" <<<"$bisect_out" || fail "bisect with --first-parent did not name $first_bad"
@@ -498,7 +510,7 @@ rm "$stuck/builds"
 git -C "$stuck" add -A && git -C "$stuck" commit -q -m "does not build"
 echo x >"$stuck/note" && git -C "$stuck" add -A && git -C "$stuck" commit -q -m "still does not build"
 status=0
-stuck_out=$(cd "$stuck" && "$HERE/t.sh" bisect "$stuck_good" -b 'test -f builds' -- false 2>&1) || status=$?
+stuck_out=$(cd "$stuck" && tsh bisect "$stuck_good" -b 'test -f builds' -- false 2>&1) || status=$?
 ((status == 89)) || fail "bisect exited $status where nothing between good and bad could answer (want 89):"$'\n'"$stuck_out"
 grep -q 'INCONCLUSIVE' <<<"$stuck_out" || fail "bisect did not say its answer was inconclusive"
 [[ "$(git -C "$stuck" rev-parse --abbrev-ref HEAD)" == master ]] ||
@@ -508,7 +520,7 @@ echo "== bisect refuses to start over a bisect already in progress"
 # git bisect start resets an in-progress bisect without a word
 git -C "$repo" bisect start >/dev/null
 status=0
-(cd "$repo" && "$HERE/t.sh" bisect "$first_good" -- true) >/dev/null 2>&1 || status=$?
+(cd "$repo" && tsh bisect "$first_good" -- true) >/dev/null 2>&1 || status=$?
 git -C "$repo" bisect reset >/dev/null 2>&1
 ((status == 64)) || fail "bisect started over a bisect already in progress (got $status)"
 
@@ -520,7 +532,7 @@ probe() { # probe EXPECTED DESCRIPTION -- CMD...
   local expected="$1" what="$2"
   shift 2
   local got=0
-  (cd "$repo" && "$HERE/t.sh" bisect-probe -l "$work/logs" "$@") >/dev/null 2>&1 || got=$?
+  (cd "$repo" && tsh bisect-probe -l "$work/logs" "$@") >/dev/null 2>&1 || got=$?
   ((got == expected)) || fail "a commit that $what should be $expected to git bisect, but the probe said $got"
 }
 probe 0 "builds and passes" -b true -- true
@@ -550,7 +562,7 @@ echo "== bisect refuses to start on a working tree it would trample"
 # dirty-tree refusal was never exercised at all.
 echo dirty >>"$repo/note"
 status=0
-(cd "$repo" && "$HERE/t.sh" bisect "$first_good" -- true) >/dev/null 2>&1 || status=$?
+(cd "$repo" && tsh bisect "$first_good" -- true) >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "bisect started with uncommitted changes in the tree (got $status)"
 git -C "$repo" checkout -q -- . 2>/dev/null || :
 
@@ -596,7 +608,7 @@ git -C "$fal" commit -q -m "the fixture"
 cp "$fal/impl.sh" "$work/impl.sh.pristine"
 
 status=0
-fal_out=$(cd "$fal" && "$HERE/t.sh" falsify -b 'sh -n impl.sh' -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
+fal_out=$(cd "$fal" && tsh falsify -b 'sh -n impl.sh' -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
 ((status == 1)) || fail "falsify exited $status where defects went unnoticed:"$'\n'"$fal_out"
 grep -q '^caught    clamp/negative' <<<"$fal_out" ||
   fail "falsify did not credit the suite for the guard it does cover:"$'\n'"$fal_out"
@@ -623,7 +635,7 @@ git -C "$fal" add slow.sh && git -C "$fal" commit -q -m "a slow suite"
 # under job control, because without it a script's background jobs IGNORE SIGINT, an
 # ignored signal cannot be trapped, and this check would find nothing to interrupt
 set -m
-(cd "$fal" && exec "$HERE/t.sh" falsify -l "$work/logs" -- sh slow.sh) >"$work/interrupted.out" 2>&1 &
+(cd "$fal" && exec "$BASH" "$HERE/t.sh" falsify -l "$work/logs" -- sh slow.sh) >"$work/interrupted.out" 2>&1 &
 falsify_pid=$!
 set +m
 sleep 0.5
@@ -644,7 +656,7 @@ if [[ $EUID -eq 0 ]]; then
 else
   chmod a-w "$fal/impl.sh"
   status=0
-  fal_out=$(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
+  fal_out=$(cd "$fal" && tsh falsify -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
   chmod u+w "$fal/impl.sh"
   ((status == 70)) || fail "falsify measured a mutant it could not write (got $status):"$'\n'"$fal_out"
   ! grep -q 'SURVIVED' <<<"$fal_out" || fail "falsify credited a read-only source file with a survivor"
@@ -652,26 +664,26 @@ fi
 
 echo "== falsify refuses the situations where its answer would be meaningless"
 status=0
-(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh -c 'exit 1') >/dev/null 2>&1 || status=$?
+(cd "$fal" && tsh falsify -l "$work/logs" -- sh -c 'exit 1') >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "falsify measured against an already-failing suite (got $status)"
 status=0
-(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0') \
+(cd "$fal" && tsh falsify -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0') \
   >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "falsify measured against a suite that never really ran (got $status)"
 echo dirt >"$fal/impl.sh.tmp" && mv "$fal/impl.sh.tmp" "$fal/impl.sh"
 status=0
-(cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+(cd "$fal" && tsh falsify -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "falsify started on a dirty tree, where an interrupted restore looks like your own edits (got $status)"
 git -C "$fal" checkout -q -- .
 status=0
 : >"$fal/tests/empty.sh"
-(cd "$fal" && "$HERE/t.sh" falsify -d tests/empty.sh -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+(cd "$fal" && tsh falsify -d tests/empty.sh -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "falsify accepted an empty defect list, which proves nothing (got $status)"
 
 echo "== the help text lists every subcommand the dispatcher accepts"
 # The usage text is read out of this file's own header by line range, so it drifts the
 # moment a subcommand is added without moving the range. This is that drift check.
-help=$(./t.sh --help)
+help=$(tsh --help)
 subs=()
 while IFS= read -r sub; do subs+=("$sub"); done < <(sed -n 's/^  \([a-z-]*\)) cmd_[a-z_]*.*/\1/p' t.sh)
 # An extractor that matches nothing would leave the loop below empty and read as "no
@@ -687,17 +699,14 @@ done
 if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   copy() {
     local dest="$1"
-    # Everything the docs link to has to come along, or a copy fails on a dead link rather
-    # than on the defect it was built to carry
-    mkdir -p "$dest/tests/fixtures/lying" "$dest/templates"
-    cp t.sh check.sh SKILL.md README.md CHANGELOG.md LICENSE "$dest/"
-    cp -r references markers "$dest/"
-    cp templates/defects.sh templates/t.conf "$dest/templates/"
-    cp tests/fixtures/*.log "$dest/tests/fixtures/"
-    cp tests/fixtures/lying/*.log "$dest/tests/fixtures/lying/"
-    cp tests/fixtures/bash4-constructs.sh "$dest/tests/fixtures/"
+    # Everything git tracks and nothing else, so the list cannot drift from the repository
+    # the way a hand-written one did with every new file. Untracked files that are not
+    # ignored come along too: a check being written must be provable before it is
+    # committed, and `git archive` would only carry HEAD.
+    mkdir -p "$dest"
+    git ls-files -z --cached --others --exclude-standard | tar -c --null -T - -f - | tar -x -C "$dest" -f -
   }
-  nested() { (cd "$1" && T_CHECK_NESTED=1 ./check.sh >/dev/null 2>&1); }
+  nested() { (cd "$1" && T_CHECK_NESTED=1 "$BASH" ./check.sh >/dev/null 2>&1); }
 
   # A planted defect must make the copy fail FOR ITS OWN REASON. Asserting only that the
   # copy failed lets one broken check take credit for another's proof — which is how the
@@ -705,7 +714,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   # instead.
   catches() { # catches DIR EXPECTED-FRAGMENT DESCRIPTION
     local dir="$1" want="$2" what="$3" out
-    out=$( (cd "$dir" && T_CHECK_NESTED=1 ./check.sh 2>&1) || :)
+    out=$( (cd "$dir" && T_CHECK_NESTED=1 "$BASH" ./check.sh 2>&1) || :)
     local line
     line=$(grep -m 1 '^check:' <<<"$out" || :)
     [[ -n "$line" ]] || fail "$what: the copy did not fail at all"
@@ -719,6 +728,10 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   # vacuous while the gate stays green. This repository shipped exactly that bug for four
   # commits, after a step was added that a copy could not satisfy.
   copy "$work/pristine"
+  # The copy has to be complete, or a copy that fails below could be failing on the gap
+  while IFS= read -r tracked; do
+    [[ -e "$work/pristine/$tracked" ]] || fail "the copy step lost $tracked"
+  done < <(git ls-files --cached --others --exclude-standard)
   nested "$work/pristine" ||
     fail "an untouched copy does not pass the gate — every 'able to fail' proof below would be meaningless"
 
