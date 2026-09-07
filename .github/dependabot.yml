@@ -1,0 +1,13 @@
+# The action pins in the workflows are major tags, and a major tag moves by itself only
+# within its major. What it cannot do is tell anyone that GitHub retired the Node runtime
+# an old major runs on, or that a new major exists: that arrives as a red run with no
+# change in the repository. This is the pull request that arrives first instead.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

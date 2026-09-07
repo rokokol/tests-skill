@@ -87,6 +87,13 @@ check_lint() {
   # check-pins.sh, copied verbatim, which proves on every run that it catches each shape
   # it claims to and stays quiet on the pinned spellings.
   ./check-pins.sh
+  # And the pins have to be watched: a major tag moves within its major on its own, but
+  # nothing says when GitHub retires the runtime an old major runs on, except a red run
+  # with no change in the repository. dependabot's pull request arrives first.
+  [[ -f .github/dependabot.yml ]] ||
+    fail ".github/dependabot.yml is missing — the action pins in the workflows are watched by nobody"
+  grep -q 'package-ecosystem: github-actions' .github/dependabot.yml ||
+    fail ".github/dependabot.yml does not watch the github-actions ecosystem"
 
   echo "== SKILL.md loads, every reference is reachable, every link and anchor resolves"
   # The ci skill's gate for a skill repository, copied verbatim: the frontmatter an agent
@@ -722,6 +729,7 @@ check_proofs() {
   #   sed    FILE SCRIPT MARK   run SCRIPT over FILE; MARK must be in the result
   #   awk    FILE PROGRAM MARK  the same, with awk
   #   drop   FILE TEXT          delete every line holding TEXT; none may remain
+  #   rm     FILE               delete FILE
   # A mutation that did not land is a failure of its own, never a silent pass: a sed whose
   # pattern drifted from t.sh would otherwise leave a pristine copy, and the pristine copy
   # passes, which reads exactly like a defect that was caught.
@@ -748,9 +756,10 @@ check_proofs() {
         grep -vF -- "$1" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
         ! grep -qF -- "$1" "$dir/$file" || fail "$what: the defect was not planted — '$1' is still in $file"
         ;;
+      rm) rm -f "$dir/$file" ;;
       *) fail "plant: no such mutator '$how'" ;;
     esac
-    [[ ! -x "$file" ]] || chmod +x "$dir/$file"
+    [[ ! -x "$file" || ! -e "$dir/$file" ]] || chmod +x "$dir/$file"
     catches "$dir" "$want" "$what"
     planted=$((planted + 1))
   }
@@ -777,6 +786,10 @@ check_proofs() {
       append markers/default.txt $'test session starts\n'
     plant lint unproven "has no fixture at" "a marker set with no fixture" \
       write markers/invented.txt $'no tests ran\n'
+    plant lint unwatched "watched by nobody" "action pins with no dependabot" \
+      rm .github/dependabot.yml
+    plant lint unwatched-actions "does not watch the github-actions" "a dependabot that watches something else" \
+      write .github/dependabot.yml $'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    schedule:\n      interval: weekly\n'
     # An ignored key is a policy silently not in effect, which is worse than no config at
     # all: the repository believes markers are loaded that never were
     plant behaviour lenient "unknown key" "a config that ignores an unknown key" \
@@ -867,9 +880,9 @@ check_proofs() {
   # The table above is the proof; a table that lost its rows would prove nothing while
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
-    lint) want_planted=10 ;;
+    lint) want_planted=12 ;;
     behaviour) want_planted=17 ;;
-    all) want_planted=27 ;;
+    all) want_planted=29 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
