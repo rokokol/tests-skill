@@ -10,7 +10,12 @@ One red run is not evidence of instability; it may be a real bug that only your 
 timing exposes. `t.sh flaky 20 -- <cmd>` runs the same command twenty times and reports how
 many runs disagreed with the first, pointing at the first divergent log. It keeps no
 history and computes no statistics — it exists to turn "it failed once, probably nothing"
-into a fact, so the cause can be found.
+into a fact, so the cause can be found. The marker sets and patterns `run` takes apply to
+every one of the runs:
+
+```sh
+t.sh flaky 20 -m rust -- cargo test --workspace --no-fail-fast
+```
 
 If twenty runs agree, the instability is elsewhere: in the CI machine's load, in the order
 the suite happens to run in, in a neighbouring test's leftovers. Reproduce it there —

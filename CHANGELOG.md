@@ -16,6 +16,7 @@ section for work that has landed but not shipped would never close
 ### Changed
 
 - **the harness's own exit codes moved out of the range test runners use.** `run` reported a lying log as 3, `flaky` reported disagreement as 4, and every usage or harness error was 2. GNU make exits 2 on any error, pytest uses 2 to 5, `mix test` fails with 2, and cargo-nextest exits 4 for "no tests ran", so a probe that skipped on 2 skipped every commit where `make test` failed, and a `flaky` verdict was indistinguishable from nextest's own empty run. The verdicts now sit in a band nothing else claims: 64 for a usage error, 70 for a failure of the harness itself, 79 for a run that exited 0 while its log said otherwise, 86 for runs that disagreed. Anything checking the old numbers must be updated
+- `flaky`, `bisect` and `bisect-probe` name the flags they forward to `run`, `-m`, `-p`, `-t`, and `-l` where the logs may go, and refuse anything else before the first run, where they used to sweep any word up and hand it on. The gate reads accepted flags out of each parser, and a documented `t.sh flaky 20 -m rust` was being flagged as impossible
 
 ### Added
 

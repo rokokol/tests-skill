@@ -8,17 +8,17 @@
 #                             -m adds a marker set from markers/ (a name) or a file path;
 #                             markers/default.txt always applies. The kind of verdict —
 #                             pass, fail or lied — is written beside the log as LOG.verdict
-#   t.sh flaky N [-l DIR] [-p PATTERN] -- CMD...
+#   t.sh flaky N [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             run CMD N times and report how many runs disagreed with the
 #                             first. Evidence that a test is unstable, never a way to
 #                             tolerate one
-#   t.sh bisect GOOD [-b BUILD] [-p PATTERN] -- CMD...
+#   t.sh bisect GOOD [-b BUILD] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             git bisect run between GOOD and HEAD, judging each commit
 #                             with run. A commit that cannot be built is skipped rather
 #                             than blamed
-#   t.sh bisect-probe [-b BUILD] [-p PATTERN] -- CMD...
+#   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
-#   t.sh falsify [-d FILE] [-b BUILD] [FILTER] -- CMD...
+#   t.sh falsify [-d FILE] [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
 #                             break one guard at a time, as written by hand in FILE
 #                             (default tests/defects.sh), and require the suite to notice.
 #                             A defect the suite survives names something nobody checks
@@ -374,11 +374,14 @@ cmd_flaky() {
         logdir="${2:?-l needs a directory}"
         shift 2
         ;;
-      --) break ;;
-      *)
-        pass+=("$1")
-        shift
+      -m | -p | -t)
+        # Forwarded to run, which validates them. Named here rather than swept up by a
+        # catch-all, so the gate can read from this parser which flags flaky accepts.
+        pass+=("$1" "${2:?$1 needs a value}")
+        shift 2
         ;;
+      --) break ;;
+      *) die "flaky: unexpected argument '$1' — the command goes after --" ;;
     esac
   done
   [[ "${1:-}" == "--" ]] || die "flaky: the command must follow -- (t.sh flaky 20 -- pytest -q)"
@@ -442,11 +445,12 @@ cmd_bisect_probe() {
         build="${2:?-b needs a command}"
         shift 2
         ;;
-      --) break ;;
-      *)
-        pass+=("$1")
-        shift
+      -l | -m | -p | -t)
+        pass+=("$1" "${2:?$1 needs a value}")
+        shift 2
         ;;
+      --) break ;;
+      *) die "bisect-probe: unexpected argument '$1' — the command goes after --" ;;
     esac
   done
   [[ "${1:-}" == "--" ]] || die "bisect-probe: the command must follow --"
@@ -481,11 +485,14 @@ cmd_bisect() {
   local -a pass=()
   while (($#)); do
     case "$1" in
-      --) break ;;
-      *)
-        pass+=("$1")
-        shift
+      -b | -m | -p | -t)
+        # -b for the probe, the rest for run. No -l: the logs of a bisect go outside the
+        # working tree on purpose, because bisect checks other commits out over it.
+        pass+=("$1" "${2:?$1 needs a value}")
+        shift 2
         ;;
+      --) break ;;
+      *) die "bisect: unexpected argument '$1' — the command goes after --" ;;
     esac
   done
   [[ "${1:-}" == "--" ]] || die "bisect: the command must follow -- (t.sh bisect HEAD~20 -- pytest -q)"

@@ -149,17 +149,25 @@ echo "== every t.sh example in the docs uses flags that subcommand actually acce
 # drifted the day it was written: two ecosystem references showed `t.sh run -b '...'`, and
 # `run` has no -b — the build phase belongs to falsify and bisect. Found by somebody trying
 # to follow the documentation, which is the expensive way to find it.
-flags_of() { # flags_of SUBCOMMAND -> the flags its parser accepts, one per line
-  awk -v want="cmd_${1//-/_}()" '
-    $0 ~ "^"want { inside = 1; next }
+flags_of() { # flags_of SUBCOMMAND [FILE] -> the flags its parser accepts, one per line
+  # The function is found by prefix, not by regex. As a regex, "cmd_bisect()" holds an
+  # empty group and matches cmd_bisect_probe too, which for a while hid that bisect's own
+  # parser declared no flags at all: the probe's -b was being read as bisect's.
+  awk -v want="cmd_${1//-/_}() {" '
+    substr($0, 1, length(want)) == want { inside = 1; next }
     inside && /^}/ { inside = 0 }
-    inside && match($0, /^ *(-[a-zA-Z])(\ *\|\ *-[a-zA-Z])*\)/) {
+    inside && match($0, /^ *(--?[a-zA-Z][a-zA-Z-]*)(\ *\|\ *--?[a-zA-Z][a-zA-Z-]*)*\)/) {
       line = substr($0, RSTART, RLENGTH)
       gsub(/[)| ]/, "\n", line)
       print line
     }
-  ' t.sh | grep -o '^-[a-zA-Z]$' | sort -u
+  ' "${2:-t.sh}" | grep -oE '^--?[a-zA-Z][a-zA-Z-]*$' | sort -u
 }
+# Proven on a synthetic file rather than on t.sh, where the two functions happen to agree
+# shellcheck disable=SC2016  # the $1 belongs to the synthetic parser being written out
+printf 'cmd_a() {\n  case "$1" in\n    -x) ;;\n  esac\n}\ncmd_a_b() {\n  case "$1" in\n    -y) ;;\n  esac\n}\n' >"$work/anchor.sh"
+[[ "$(flags_of a "$work/anchor.sh")" == "-x" ]] ||
+  fail "flags_of reads past the function it was asked about: cmd_a_b's flags leaked into cmd_a's"
 examples=0
 while IFS= read -r example; do
   sub=$(awk '{print $2}' <<<"$example")
@@ -167,9 +175,13 @@ while IFS= read -r example; do
   allowed=$(flags_of "$sub")
   [[ -n "$allowed" ]] || fail "the docs show 't.sh $sub' but no cmd_$sub parses anything — the extractor or the example is wrong"
   examples=$((examples + 1))
-  # only the part before --, which is where flags live
+  # only the part before --, which is where flags live, and with quoted arguments
+  # removed: the --workspace inside -b 'cargo build --workspace' is the build's flag
   before_ddash="${example%% -- *}"
-  for flag in $(grep -o ' -[a-zA-Z]\b' <<<"$before_ddash" || :); do
+  # shellcheck disable=SC2001  # ${var//'*'/} would be greedy across two quoted arguments
+  before_ddash=$(sed "s/'[^']*'//g" <<<"$before_ddash")
+  # `\b` would be shorter, and is GNU-only
+  for flag in $(grep -oE ' --?[a-zA-Z][a-zA-Z-]*( |$)' <<<"$before_ddash" || :); do
     grep -qx -- "${flag# }" <<<"$allowed" ||
       fail "the docs show 't.sh $sub ${flag# }', which that subcommand does not accept: $example"
   done
