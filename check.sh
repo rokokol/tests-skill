@@ -473,6 +473,44 @@ grep -qF "$first_bad" <<<"$bisect_out" ||
 # And it must leave the repository where it found it, not detached mid-bisect
 [[ "$(git -C "$repo" rev-parse --abbrev-ref HEAD)" == master ]] ||
   fail "bisect left the repository detached instead of resetting it"
+# git's session log is the one artifact a wrong answer can be corrected from
+bisect_logdir=$(sed -n 's/^t.sh: logs for this bisect are in //p' <<<"$bisect_out")
+[[ -f "$bisect_logdir/bisect.log" ]] || fail "bisect did not keep git's session log for a replay"
+# git's own options pass through to git bisect start
+status=0
+bisect_out=$(cd "$repo" && "$HERE/t.sh" bisect "$first_good" --first-parent -b 'test -f builds' -- test -f passes 2>&1) ||
+  status=$?
+((status == 0)) || fail "bisect exited $status with --first-parent on a linear history:"$'\n'"$bisect_out"
+grep -qF "$first_bad" <<<"$bisect_out" || fail "bisect with --first-parent did not name $first_bad"
+
+echo "== bisect says so when every commit between good and bad was skipped"
+# git prints "cannot continue any more" and exits nonzero; passed through raw, that once
+# read as a usage error, and the harness said nothing of its own about the answer
+stuck="$work/bisect-stuck"
+mkdir -p "$stuck"
+git -C "$stuck" init -q -b master
+git -C "$stuck" config user.name check
+git -C "$stuck" config user.email check@example.invalid
+: >"$stuck/builds"
+git -C "$stuck" add -A && git -C "$stuck" commit -q -m "good: it builds"
+stuck_good=$(git -C "$stuck" rev-parse HEAD)
+rm "$stuck/builds"
+git -C "$stuck" add -A && git -C "$stuck" commit -q -m "does not build"
+echo x >"$stuck/note" && git -C "$stuck" add -A && git -C "$stuck" commit -q -m "still does not build"
+status=0
+stuck_out=$(cd "$stuck" && "$HERE/t.sh" bisect "$stuck_good" -b 'test -f builds' -- false 2>&1) || status=$?
+((status == 89)) || fail "bisect exited $status where nothing between good and bad could answer (want 89):"$'\n'"$stuck_out"
+grep -q 'INCONCLUSIVE' <<<"$stuck_out" || fail "bisect did not say its answer was inconclusive"
+[[ "$(git -C "$stuck" rev-parse --abbrev-ref HEAD)" == master ]] ||
+  fail "an inconclusive bisect left the repository detached"
+
+echo "== bisect refuses to start over a bisect already in progress"
+# git bisect start resets an in-progress bisect without a word
+git -C "$repo" bisect start >/dev/null
+status=0
+(cd "$repo" && "$HERE/t.sh" bisect "$first_good" -- true) >/dev/null 2>&1 || status=$?
+git -C "$repo" bisect reset >/dev/null 2>&1
+((status == 64)) || fail "bisect started over a bisect already in progress (got $status)"
 
 echo "== every status a commit can produce maps to the right bisect verdict"
 # Asserted on the probe directly rather than through a bisect: which commits git chooses
@@ -783,6 +821,13 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/badallow/t.sh"
   ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
   catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
+
+  echo "== the inconclusive-bisect check is able to fail: git's surrender read as success"
+  copy "$work/surrender"
+  sed 's/^    return 89$/    return 0/' t.sh >"$work/surrender/t.sh.new" && mv "$work/surrender/t.sh.new" "$work/surrender/t.sh"
+  chmod +x "$work/surrender/t.sh"
+  ! grep -qF 'return 89' "$work/surrender/t.sh" || fail "the surrender fixture was not planted"
+  catches "$work/surrender" "want 89" "a bisect that reports an all-skipped history as resolved"
 
   echo "== the heard-refusal check is able to fail: flaky muting run's stderr with the command's"
   copy "$work/muted"

@@ -12,10 +12,11 @@
 #                             run CMD N times and report how many runs disagreed with the
 #                             first. Evidence that a test is unstable, never a way to
 #                             tolerate one
-#   t.sh bisect GOOD [-b BUILD] [-m SET] [-p PATTERN] [-t N] -- CMD...
+#   t.sh bisect GOOD [-b BUILD] [-m SET] [-p PATTERN] [-t N] [--first-parent] [--no-checkout] -- CMD...
 #                             git bisect run between GOOD and HEAD, judging each commit
 #                             with run. A commit that cannot be built is skipped rather
-#                             than blamed
+#                             than blamed; when only such commits are left the answer is
+#                             INCONCLUSIVE, exit 89, and git's session log is kept
 #   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
 #   t.sh falsify [-d FILE] [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
@@ -37,6 +38,7 @@
 #   70  the harness itself failed — a log it cannot write, a file it cannot put back
 #   79  CMD exited 0 but its log says it did not do what a pass claims (run)
 #   86  the runs disagreed with each other (flaky)
+#   89  only commits that could not answer are left between good and bad (bisect)
 set -uo pipefail
 
 # The header above, up to the first line that is not a comment, is the help text
@@ -526,7 +528,7 @@ cmd_bisect() {
   local good="${1:-}"
   [[ -n "$good" ]] || die "bisect: needs a known-good ref (t.sh bisect v1.2.0 -- pytest -q)"
   shift
-  local -a pass=()
+  local -a pass=() start_opts=()
   while (($#)); do
     case "$1" in
       -b | -m | -p | -t)
@@ -534,6 +536,14 @@ cmd_bisect() {
         # working tree on purpose, because bisect checks other commits out over it.
         pass+=("$1" "${2:?$1 needs a value}")
         shift 2
+        ;;
+      --first-parent | --no-checkout)
+        # git's own. --first-parent follows only the first parent of a merge, which is
+        # the bisect to run when a merged branch held commits that never built on their
+        # own; --no-checkout only moves BISECT_HEAD, for a probe that reads history
+        # rather than a tree.
+        start_opts+=("$1")
+        shift
         ;;
       --) break ;;
       *) die "bisect: unexpected argument '$1' — the command goes after --" ;;
@@ -547,24 +557,54 @@ cmd_bisect() {
   fi
   git rev-parse --verify --quiet "$good^{commit}" >/dev/null ||
     die "bisect: '$good' is not a commit in this repository"
+  # `git bisect start` over a bisect already in progress resets it without a word, and
+  # whoever was in the middle of that one loses their place
+  if git bisect log >/dev/null 2>&1; then
+    die "bisect: a bisect is already in progress here — finish it, or run 'git bisect reset' first"
+  fi
 
   # Logs go outside the working tree: bisect checks other commits out over it, and a
-  # directory of logs sitting in the middle of that is noise at best
-  local logdir
-  logdir=$(mktemp -d) || fatal "bisect: cannot create a log directory"
+  # directory of logs sitting in the middle of that is noise at best. A global, because
+  # the EXIT trap below runs after this function's locals are gone.
+  BISECT_LOGDIR=$(mktemp -d "${TMPDIR:-/tmp}/t.sh.XXXXXX") || fatal "bisect: cannot create a log directory"
+  local logdir="$BISECT_LOGDIR"
   echo "t.sh: logs for this bisect are in $logdir"
 
   # Leaving a repository in a detached bisect state is a nasty thing to do to whoever runs
-  # this, including on an interrupt
-  trap 'git bisect reset >/dev/null 2>&1 || :' EXIT
+  # this, including on an interrupt. git's own session log is saved first: it is the one
+  # artifact from which a wrong answer can be corrected — edit it, `git bisect replay`.
+  trap 'git bisect log >"$BISECT_LOGDIR/bisect.log" 2>/dev/null; git bisect reset >/dev/null 2>&1 || :' EXIT
 
-  git bisect start >/dev/null || fatal "bisect: could not start"
+  git bisect start "${start_opts[@]+"${start_opts[@]}"}" >/dev/null || fatal "bisect: could not start"
   git bisect bad HEAD >/dev/null || fatal "bisect: could not mark HEAD bad"
   git bisect good "$good" >/dev/null || fatal "bisect: could not mark $good good"
 
-  local status=0
-  T_LOGDIR="$logdir" git bisect run "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" || status=$?
-  return "$status"
+  # git's own exit status cannot carry the answer: it is 0 on a culprit found, nonzero
+  # both when only skipped commits are left and when the probe made it abort, and those
+  # two mean different things to whoever asked. So what git said is read instead.
+  local out="$logdir/bisect.out"
+  T_LOGDIR="$logdir" git bisect run "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" 2>&1 | tee "$out"
+  local -a ps=("${PIPESTATUS[@]}")
+  local status=${ps[0]} culprit code
+  git bisect log >"$logdir/bisect.log" 2>/dev/null || :
+
+  if grep -q "^bisect found first '" "$out"; then
+    culprit=$(sed -n "s/^\([0-9a-f]\{7,40\}\) is the first '[a-z]*' commit$/\1/p" "$out" | head -1)
+    printf 't.sh: first bad commit is %s — the session is in %s/bisect.log, replayable with git bisect replay\n' \
+      "$culprit" "$logdir"
+    return 0
+  fi
+  if grep -q 'cannot continue any more' "$out"; then
+    printf 't.sh: INCONCLUSIVE — only commits that could not answer are left between good and bad (%s/bisect.log)\n' \
+      "$logdir" >&2
+    return 89
+  fi
+  code=$(sed -n 's/^error: bisect run failed: exit code \([0-9]*\) from .*/\1/p' "$out" | head -1)
+  if [[ -n "$code" ]] && ((code >= 128)); then
+    # The probe passed a signal through so git would abort; end with the same one
+    return "$code"
+  fi
+  fatal "bisect: git bisect run ended with exit $status and no verdict (see $out)"
 }
 
 # A passing suite says the code works. It does not say the suite would notice if the code

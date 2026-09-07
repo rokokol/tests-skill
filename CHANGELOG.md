@@ -22,6 +22,7 @@ section for work that has landed but not shipped would never close
 
 ### Added
 
+- `bisect` reads what git said instead of passing git's status through. A culprit is named on its own line and exits 0; a history where only commits that could not answer are left between good and bad is reported `INCONCLUSIVE` with exit 89, where before git's own nonzero came back looking like a usage error. git's session log is saved beside the run's logs as `bisect.log`, so a wrong answer can be corrected with `git bisect replay`. `--first-parent` and `--no-checkout` are passed through to `git bisect start`, and a bisect already in progress is refused rather than silently reset, which is what `git bisect start` does on its own
 - `run` writes the kind of verdict it reached, `pass`, `fail` or `lied`, beside the log as `LOG.verdict`. A number cannot carry it: the command's own 79 would read as the harness's. The other subcommands read the sidecar instead of guessing from the status, and a wrapper of your own can do the same
 
 ## 2026-09-05
