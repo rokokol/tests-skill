@@ -209,14 +209,25 @@ check_lint() {
   ((set_count > 0)) || fail "no marker sets were found in markers/ — the glob is broken"
 
   # An ecosystem set repeating a default entry adds nothing: the default already applies to
-  # every run, so the copy is dead weight that reads as extra coverage
+  # every run, so the copy is dead weight that reads as extra coverage. Matched the way the
+  # scan matches, case-insensitively and by containment: `No Tests Ran in 0.01s` repeats
+  # `no tests ran` as surely as the same letters would, and an exact comparison missed both.
+  defaults=()
+  while IFS= read -r m; do
+    [[ -z "$m" || "$m" == \#* ]] && continue
+    defaults+=("$(tr '[:upper:]' '[:lower:]' <<<"$m")")
+  done <markers/default.txt
+  ((${#defaults[@]} > 0)) || fail "markers/default.txt holds no markers — the extractor is broken"
   for set_file in markers/*.txt; do
     [[ "$set_file" == markers/default.txt ]] && continue
-    dupe=$(comm -12 \
-      <(grep -v '^#' markers/default.txt | grep -v '^$' | sort) \
-      <(grep -v '^#' "$set_file" | grep -v '^$' | sort))
-    [[ -z "$dupe" ]] ||
-      fail "$set_file repeats markers that markers/default.txt already applies to every run: $dupe"
+    while IFS= read -r m; do
+      [[ -z "$m" || "$m" == \#* ]] && continue
+      lower=$(tr '[:upper:]' '[:lower:]' <<<"$m")
+      for d in "${defaults[@]}"; do
+        [[ "$lower" != *"$d"* ]] ||
+          fail "$set_file repeats a marker that markers/default.txt already applies to every run: '$m' contains '$d'"
+      done
+    done <"$set_file"
   done
 }
 
@@ -839,9 +850,10 @@ check_proofs() {
   if [[ "$mode" != behaviour ]]; then
     echo "== able to fail: a set repeating a default marker"
     copy "$work/plant-dupe"
-    printf 'no tests ran\n' >>"$work/plant-dupe/markers/go.txt"
-    printf 'no tests ran in 0.01s\n' >>"$work/plant-dupe/tests/fixtures/lying/go.log"
-    catches "$work/plant-dupe" "repeats markers that markers/default.txt" "a set repeating a default marker"
+    # In other letters and with a suffix, which an exact comparison would have let through
+    printf 'No Tests Ran in 0.01s\n' >>"$work/plant-dupe/markers/go.txt"
+    printf 'No Tests Ran in 0.01s\n' >>"$work/plant-dupe/tests/fixtures/lying/go.log"
+    catches "$work/plant-dupe" "repeats a marker that markers/default.txt" "a set repeating a default marker"
     planted=$((planted + 1))
   fi
 
