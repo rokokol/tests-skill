@@ -26,6 +26,11 @@
         default = pkgs.mkShell {
           packages = with pkgs; [
             actionlint
+            # The lint half reads t.sh with awk, and the awks disagree about what they say
+            # on a program: only gawk names an escape POSIX leaves undefined. Unpinned, the
+            # proof that the gate catches such an escape would pass on a Linux runner and
+            # fail on a contributor's mac for the awk, not for the defect
+            gawk
             shellcheck
             shfmt
           ];

@@ -75,7 +75,7 @@ flags_of() { # flags_of SUBCOMMAND [FILE] -> the flags its parser accepts, one p
   awk -v want="cmd_${1//-/_}() {" '
     substr($0, 1, length(want)) == want { inside = 1; next }
     inside && /^}/ { inside = 0 }
-    inside && match($0, /^ *(--?[a-zA-Z][a-zA-Z-]*)(\ *\|\ *--?[a-zA-Z][a-zA-Z-]*)*\)/) {
+    inside && match($0, /^ *(--?[a-zA-Z][a-zA-Z-]*)( *\| *--?[a-zA-Z][a-zA-Z-]*)*\)/) {
       line = substr($0, RSTART, RLENGTH)
       gsub(/[)| ]/, "\n", line)
       print line
@@ -87,6 +87,14 @@ flags_of() { # flags_of SUBCOMMAND [FILE] -> the flags its parser accepts, one p
 printf 'cmd_a() {\n  case "$1" in\n    -x) ;;\n  esac\n}\ncmd_a_b() {\n  case "$1" in\n    -y) ;;\n  esac\n}\n' >"$work/anchor.sh"
 [[ "$(flags_of a "$work/anchor.sh")" == "-x" ]] ||
   fail "flags_of reads past the function it was asked about: cmd_a_b's flags leaked into cmd_a's"
+# And it reads it quietly. A warning on stderr is this repository's own subject turned on
+# itself: the run stays green, the line scrolls past, and nobody reads it. The one that was
+# here said `\ ` is not a regexp operator — an escape POSIX leaves undefined, so gawk, the
+# awk a macOS runner has and the busybox awk in a 3.2 container are each free to read it
+# differently while the gate reports nothing.
+awk_noise=$(flags_of a "$work/anchor.sh" 2>&1 >/dev/null || :)
+[[ -z "$awk_noise" ]] ||
+  fail "flags_of writes to stderr on an input it reads cleanly: $awk_noise"
 
 check_lint() {
   echo "== the scripts parse and lint"
@@ -1067,6 +1075,12 @@ check_proofs() {
       drop t.sh "line=\"\${line%\$'\\r'}\""
     plant lint badflag "which that subcommand does not accept" "a documented flag the parser does not have" \
       append references/verdict.md $'\n```sh\nt.sh run -b \'cargo build\' -- cargo test\n```\n'
+    # The escape goes back into flags_of's own program. Nothing about the answer changes —
+    # gawk, mawk, busybox awk, goawk and the one-true-awk macOS ships all read `\ ` as a
+    # space — so the only thing to catch is the warning, which is the point: this is the
+    # gate proving it reads its own stderr rather than scrolling past it
+    plant lint noisy-awk "writes to stderr" "an awk program that warns while the gate stays green" \
+      sed check.sh 's/( \*\\| \*/(\\ *\\|\\ */' '(\ *\|\ *'
     plant lint dead "a dead entry guards nothing" "a marker matching nothing" \
       append markers/default.txt $'a marker matching nothing\n'
     plant lint noisy "it would redden healthy runs" "a marker that fires on a healthy run" \
