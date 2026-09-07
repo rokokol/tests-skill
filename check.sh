@@ -361,6 +361,14 @@ status=0
 ./t.sh run sh -c 'exit 0' >/dev/null 2>&1 || status=$?
 ((status == 64)) || fail "run accepted a command without -- (got $status); guessing is how the wrong thing gets run"
 
+echo "== run refuses a tail length that is not a number, and counts a marker set once"
+status=0
+./t.sh run -t abc -l "$work/logs" -- sh -c 'exit 1' >/dev/null 2>&1 || status=$?
+((status == 64)) || fail "run accepted -t abc (got $status); (( )) reads a word as zero, so the tail silently vanished"
+findings=$(./t.sh run -t 0 -m rust -m rust -l "$work/logs" -- sh -c 'echo "running 0 tests"; exit 0' 2>&1 |
+  grep -c '^  \[running 0 tests\]' || :)
+((findings == 1)) || fail "a marker set named twice printed its finding $findings times, not once"
+
 echo "== run finds its markers through a symlink, absolute and relative"
 # `ln -s .../t.sh ~/.local/bin/t.sh` is how the harness gets onto a PATH. dirname of the
 # link once looked for markers/ beside the link, so every run through it refused.
@@ -739,6 +747,25 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/badallow/t.sh"
   ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
   catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
+
+  echo "== the -t check is able to fail: a tail length taken on trust"
+  copy "$work/anytail"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed '/^        \[\[ "\$tail_n" =~ \^\[0-9\]+\$ \]\] || die "run: -t needs a number/d' t.sh >"$work/anytail/t.sh.new" &&
+    mv "$work/anytail/t.sh.new" "$work/anytail/t.sh"
+  chmod +x "$work/anytail/t.sh"
+  ! grep -qF 'die "run: -t needs a number' "$work/anytail/t.sh" || fail "the unvalidated-tail fixture was not planted"
+  catches "$work/anytail" "accepted -t abc" "a run that takes -t on trust"
+
+  echo "== the duplicate-set check is able to fail: a set named twice, loaded twice"
+  copy "$work/twice"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed 's/^        add_marker_file "\$RESOLVED"$/        MARKER_FILES+=("$RESOLVED")/' t.sh >"$work/twice/t.sh.new" &&
+    mv "$work/twice/t.sh.new" "$work/twice/t.sh"
+  chmod +x "$work/twice/t.sh"
+  # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
+  grep -qF '        MARKER_FILES+=("$RESOLVED")' "$work/twice/t.sh" || fail "the loaded-twice fixture was not planted"
+  catches "$work/twice" "named twice printed" "a run that loads a marker set as often as it is named"
 
   echo "== the symlink check is able to fail: a harness that reads dirname of the link"
   copy "$work/unresolved"

@@ -92,6 +92,16 @@ resolve_markers() {
   RESOLVED="$name"
 }
 
+# The same set named twice — twice on the line, or once in the config and once on the
+# line — would print every finding twice, and a doubled finding reads as two problems
+add_marker_file() {
+  local f
+  for f in ${MARKER_FILES[@]+"${MARKER_FILES[@]}"}; do
+    [[ "$f" != "$1" ]] || return 0
+  done
+  MARKER_FILES+=("$1")
+}
+
 # Blank lines and # comments out; everything else verbatim, spaces included.
 #
 # The trailing CR is stripped first, and that is not cosmetic: a file checked out with
@@ -146,7 +156,7 @@ load_config() {
     case "$key" in
       markers)
         resolve_markers "$value"
-        MARKER_FILES+=("$RESOLVED")
+        add_marker_file "$RESOLVED"
         sets=$((sets + 1))
         ;;
       pattern)
@@ -245,7 +255,7 @@ cmd_run() {
       -m)
         # Additive: the default set always applies, and a repository opts into more
         resolve_markers "${2:?-m needs a marker set or file}"
-        MARKER_FILES+=("$RESOLVED")
+        add_marker_file "$RESOLVED"
         shift 2
         ;;
       -p)
@@ -254,6 +264,9 @@ cmd_run() {
         ;;
       -t)
         tail_n="${2:?-t needs a number}"
+        # (( )) reads a word as the variable of that name, which is zero, so `-t abc`
+        # would silently mean "no tail" rather than refuse
+        [[ "$tail_n" =~ ^[0-9]+$ ]] || die "run: -t needs a number of lines, got '$tail_n'"
         shift 2
         ;;
       --)
