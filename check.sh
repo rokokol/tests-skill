@@ -101,6 +101,14 @@ check_lint() {
   # relative link and heading anchor. It falsifies itself on copies of the repository.
   ./check-skill.sh -n "$skill_name" .
 
+  echo "== SKILL.md is still short enough to be read in one sitting"
+  # The core is the part an agent loads on every trigger. Every rule that lands in it
+  # costs the attention paid to the others, so detail belongs in references/ and the
+  # file is held to a size: past this, it is a reference wearing the core's name.
+  skill_lines=$(wc -l <SKILL.md)
+  ((skill_lines <= 90)) ||
+    fail "SKILL.md has grown to $skill_lines lines — the core is meant to be read in one sitting; move the detail into references/"
+
   echo "== no paragraph in any document is hard-wrapped"
   # GitHub soft-wraps, so a manual break inside a paragraph only means a one-word edit
   # reflows every line after it. The create-readme skill's rule for the readme, applied to
@@ -1015,6 +1023,8 @@ check_proofs() {
       append README.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
     plant lint wrapped-reference "hard-wraps a paragraph" "a hard-wrapped paragraph in a reference" \
       append references/verdict.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
+    plant lint bloated "has grown to" "a SKILL.md that grew into a reference" \
+      append SKILL.md "$(printf '\n- one more rule, and another\n%.0s' $(seq 1 40))"
     plant lint orphan "reaches it" "a reference nothing links to" \
       write references/nothing-points-here.md ''
     plant lint deadlink "which does not exist" "a link to a missing file" \
@@ -1157,9 +1167,9 @@ check_proofs() {
   # The table above is the proof; a table that lost its rows would prove nothing while
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
-    lint) want_planted=16 ;;
+    lint) want_planted=17 ;;
     behaviour) want_planted=26 ;;
-    all) want_planted=42 ;;
+    all) want_planted=43 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
