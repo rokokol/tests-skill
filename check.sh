@@ -22,7 +22,7 @@ cd "$HERE"
 
 # One source of truth for what gets linted. A second copy of this list drifts, and a
 # drifted list lies about what was checked.
-scripts=(t.sh check.sh templates/defects.sh)
+scripts=(t.sh check.sh check-skill.sh check-pins.sh templates/defects.sh)
 
 # The skill's own name, as the frontmatter, the readme and the symlink all spell it
 skill_name=tests
@@ -98,28 +98,22 @@ check_lint() {
   # this the copies would all die here, and every "able to fail" proof would be vacuous while
   # the gate stayed green. Outside a nested run the workflows must exist.
   if [[ -n "${T_CHECK_NESTED:-}" ]]; then
-    echo "   skipped in the nested copy, which carries no workflows"
+    echo "   actionlint skipped in the nested copy, which is not a git project"
   else
     [[ -d .github/workflows ]] || fail ".github/workflows is missing — nothing gates this repository"
     actionlint
-    # This repo follows its own advice about pinning: a job that resolves a tool at run time
-    # changes behaviour with zero change in the repository. The guard is here as well as in
-    # the workflow, so it also fails locally rather than only after a push.
-    if grep -rEn 'nix (run|shell) nixpkgs#|npx +[a-z@.-]|pip +install |go +install .*@latest' .github/workflows; then
-      fail "an unpinned registry lookup in a workflow — pin the tool in the flake's dev shell and use nix develop"
-    fi
   fi
+  # This repo follows its own advice about pinning: a job that resolves a tool at run time
+  # changes behaviour with zero change in the repository. The guard is the ci skill's
+  # check-pins.sh, copied verbatim, which proves on every run that it catches each shape
+  # it claims to and stays quiet on the pinned spellings.
+  ./check-pins.sh
 
-  echo "== SKILL.md carries the frontmatter an agent loads it by"
-  # A skill whose frontmatter is malformed or renamed is simply never loaded, and nothing
-  # says so: the agent just never reaches for it.
-  head -1 SKILL.md | grep -qx -- '---' || fail "SKILL.md does not open with a frontmatter block"
-  front=$(sed -n '2,/^---$/p' SKILL.md)
-  for key in name description license; do
-    grep -q "^$key:" <<<"$front" || fail "SKILL.md frontmatter has no $key"
-  done
-  grep -qx "name: $skill_name" <<<"$front" ||
-    fail "SKILL.md does not call this skill '$skill_name', which is what the readme and the symlink call it"
+  echo "== SKILL.md loads, every reference is reachable, every link and anchor resolves"
+  # The ci skill's gate for a skill repository, copied verbatim: the frontmatter an agent
+  # loads the skill by, reachability as a real walk over links from SKILL.md, and every
+  # relative link and heading anchor. It falsifies itself on copies of the repository.
+  ./check-skill.sh -n "$skill_name" .
 
   echo "== no paragraph in the readme is hard-wrapped"
   # GitHub soft-wraps, so a manual break inside a paragraph only means a one-word edit
@@ -137,41 +131,6 @@ check_lint() {
   wrapped=$(hard_wrapped README.md)
   [[ -z "$wrapped" ]] ||
     fail "README.md hard-wraps a paragraph at line(s): $(tr '\n' ' ' <<<"$wrapped")— one paragraph is one line"
-
-  echo "== every reference is reachable, and every link and anchor resolves"
-  # A reference nothing links to is never loaded, so it rots unread while reading as
-  # maintained. Reachability is transitive: SKILL.md may delegate to a reference that links on.
-  docs=(SKILL.md README.md)
-  while IFS= read -r ref; do docs+=("$ref"); done < <(find references -type f -name '*.md' | sort)
-  ((${#docs[@]} > 2)) || fail "no references were found — the extractor is broken"
-  for ref in "${docs[@]:2}"; do
-    base=$(basename "$ref")
-    grep -qrF "$base" SKILL.md references/ ||
-      fail "$ref exists but nothing links to it — it will rot unread"
-  done
-
-  # Every relative link resolves to a file that exists, and every #anchor to a heading in it
-  for doc in "${docs[@]}"; do
-    dir=$(dirname "$doc")
-    while IFS= read -r link; do
-      target="${link%%#*}"
-      anchor="${link#*#}"
-      [[ "$anchor" == "$link" ]] && anchor=""
-      if [[ -n "$target" ]]; then
-        path="$dir/$target"
-        [[ -e "$path" ]] || fail "$doc links to $target, which does not exist"
-      else
-        path="$doc"
-      fi
-      [[ -n "$anchor" && -f "$path" ]] || continue
-      # GitHub's anchor form: lowercase, spaces to dashes, punctuation dropped
-      if ! sed -n 's/^#\{1,6\} *//p' "$path" |
-        tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-\n' |
-        grep -qx -- "$anchor"; then
-        fail "$doc links to #$anchor in $path, where no heading has that anchor"
-      fi
-    done < <(grep -o '](\([^)]*\))' "$doc" | sed 's/^](//; s/)$//' | grep -v '^[a-z]*://')
-  done
 
   echo "== every t.sh example in the docs uses flags that subcommand actually accepts"
   # A documented command is a hand-written mirror of the parser, and mirrors drift. This one
@@ -737,9 +696,11 @@ check_proofs() {
   # instead.
   catches() { # catches DIR EXPECTED-FRAGMENT DESCRIPTION
     local dir="$1" want="$2" what="$3" out
-    out=$( (cd "$dir" && T_CHECK_NESTED=1 "$BASH" ./check.sh "$mode" 2>&1) || :)
+    # stderr only: every refusal goes there, and the family's gates print their own
+    # "all clear" lines to stdout under the same check-skill:/check-pins: prefix
+    out=$( (cd "$dir" && T_CHECK_NESTED=1 "$BASH" ./check.sh "$mode" 2>&1 >/dev/null) || :)
     local line
-    line=$(grep -m 1 '^check:' <<<"$out" || :)
+    line=$(grep -m 1 -E '^check(-skill|-pins)?:' <<<"$out" || :)
     [[ -n "$line" ]] || fail "$what: the copy did not fail at all"
     [[ "$line" == *"$want"* ]] ||
       fail "$what: the copy failed for another reason — $line"
@@ -805,7 +766,7 @@ check_proofs() {
       write SKILL.md $'no frontmatter here\n'
     plant lint wrapped "hard-wraps a paragraph" "a hard-wrapped paragraph" \
       append README.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
-    plant lint orphan "nothing links to it" "a reference nothing links to" \
+    plant lint orphan "reaches it" "a reference nothing links to" \
       write references/nothing-points-here.md ''
     plant lint deadlink "which does not exist" "a link to a missing file" \
       append SKILL.md $'\nSee [the missing one](references/not-a-file.md).\n'
