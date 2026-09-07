@@ -810,6 +810,70 @@ DEFECTS
   (cd "$fal" && tsh falsify -d tests/in-tests.sh --any-file -l "$work/logs" --out "$work/fo2" -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 83)) || fail "falsify with --any-file did not run the defect in the test file (got $status, want 83)"
 
+  echo "== prove takes the fix out of a commit and requires its tests to go red"
+  # A clone, with commits of every shape prove has to tell apart: a test that pins its
+  # fix, a test that does not, a fix without which nothing builds, a commit with no fix
+  prove_repo="$work/prove-repo"
+  git clone -q "$fal" "$prove_repo"
+  git -C "$prove_repo" config user.name check
+  git -C "$prove_repo" config user.email check@example.invalid
+  pcommit() { # pcommit MESSAGE
+    git -C "$prove_repo" add -A
+    git -C "$prove_repo" commit -q -m "$1"
+  }
+  # The suite has to live where prove can tell it from the code: under tests/
+  mkdir -p "$prove_repo/tests"
+  git -C "$prove_repo" mv suite.sh tests/suite.sh
+  pcommit "the suite moves under tests/"
+  # (a) a test that pins its fix
+  # shellcheck disable=SC2016  # the $1 belongs to the fixture's own sh
+  printf 'double() { echo $(( $1 * 2 )); }\n' >>"$prove_repo/impl.sh"
+  # shellcheck disable=SC2016  # the $(...) belongs to the fixture's own sh
+  printf '[ "$(double 2)" = "4" ] || { echo "double is wrong"; exit 1; }\n' >>"$prove_repo/tests/suite.sh"
+  pcommit "double, with a test that pins it"
+  pinned=$(git -C "$prove_repo" rev-parse HEAD)
+  status=0
+  prove_out=$(cd "$prove_repo" && tsh prove -l "$work/logs" -- sh tests/suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "prove exited $status on a commit whose test pins its fix (want proven, 0):"$'\n'"$prove_out"
+  grep -q '^proven:' <<<"$prove_out" || fail "prove did not say the commit was proven:"$'\n'"$prove_out"
+  git -C "$prove_repo" diff --quiet || fail "prove left the fix taken away"
+  # (b) a test that does not pin its fix
+  # shellcheck disable=SC2016  # the $1 belongs to the fixture's own sh
+  printf 'triple() { echo $(( $1 * 3 )); }\n' >>"$prove_repo/impl.sh"
+  printf 'echo "also fine"\n' >>"$prove_repo/tests/suite.sh"
+  pcommit "triple, with a test that asserts nothing about it"
+  status=0
+  prove_out=$(cd "$prove_repo" && tsh prove -l "$work/logs" -- sh tests/suite.sh 2>&1) || status=$?
+  ((status == 83)) || fail "prove exited $status on a commit whose test does not pin its fix (want VACUOUS, 83):"$'\n'"$prove_out"
+  grep -q '^VACUOUS:' <<<"$prove_out" || fail "prove did not call the vacuous commit vacuous:"$'\n'"$prove_out"
+  git -C "$prove_repo" diff --quiet || fail "prove left the vacuous fix taken away"
+  # (c) a fix without which nothing builds: the commit adds the file the build checks
+  # shellcheck disable=SC2016  # the $1 belongs to the fixture's own sh
+  printf '#!/bin/sh\nquad() { echo $(( $1 * 4 )); }\n' >"$prove_repo/impl2.sh"
+  # shellcheck disable=SC2016  # the $(...) belongs to the fixture's own sh
+  printf '. ./impl2.sh\n[ "$(quad 2)" = "8" ] || { echo "quad is wrong"; exit 1; }\n' >>"$prove_repo/tests/suite.sh"
+  pcommit "quad, in a new file"
+  status=0
+  prove_out=$(cd "$prove_repo" && tsh prove -b 'sh -n impl2.sh' -l "$work/logs" -- sh tests/suite.sh 2>&1) || status=$?
+  ((status == 88)) || fail "prove exited $status where taking the fix away breaks the build (want 88):"$'\n'"$prove_out"
+  [[ -f "$prove_repo/impl2.sh" ]] || fail "prove did not put back the file the commit added"
+  [[ -z "$(git -C "$prove_repo" status --porcelain)" ]] || fail "prove left the tree dirty after removing and restoring a new file"
+  # (d) a commit with no fix in it
+  printf 'helper=2\n' >"$prove_repo/tests/helper.sh"
+  pcommit "only a test file"
+  status=0
+  (cd "$prove_repo" && tsh prove -l "$work/logs" -- sh tests/suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "prove accepted a commit with no fix to take away (got $status)"
+  # (e) a commit that is not HEAD is proven in a worktree, and the tree in front of you is left alone
+  status=0
+  prove_out=$(cd "$prove_repo" && tsh prove "$pinned" -l "$work/logs" -- sh tests/suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "prove exited $status on an older commit whose test pins its fix (want 0):"$'\n'"$prove_out"
+  [[ "$(git -C "$prove_repo" worktree list | wc -l)" -eq 1 ]] || fail "prove left a worktree behind"
+  [[ -z "$(git -C "$prove_repo" status --porcelain)" ]] || fail "prove of an older commit touched the tree in front of you"
+  status=0
+  (cd "$prove_repo" && tsh prove no-such-ref -l "$work/logs" -- sh tests/suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "prove accepted a ref that does not exist (got $status)"
+
   echo "== the help text lists every subcommand the dispatcher accepts"
   # The usage text is read out of this file's own header by line range, so it drifts the
   # moment a subcommand is added without moving the range. This is that drift check.
@@ -895,6 +959,9 @@ check_proofs() {
     [[ "$mode" == all || "$mode" == "$half" ]] || return 0
     local dir="$work/plant-$name"
     echo "== able to fail: $what"
+    # Two rows with one name would share a copy, and the second would inherit the first's
+    # defect on top of its own — which is how a proof once failed for another's reason
+    [[ ! -e "$dir" ]] || fail "plant: the name '$name' is used by two rows"
     copy "$dir"
     case "$how" in
       append) printf '%s' "$1" >>"$dir/$file" ;;
@@ -976,6 +1043,8 @@ check_proofs() {
       sed t.sh "s/^  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
+    plant behaviour vacuous "want proven" "a prove that never takes the fix away" \
+      sed t.sh 's/^      printf '"'"'%s'"'"' "\${befores\[\$i\]}" >"\${src\[\$i\]}" || fatal "prove: cannot write.*$/      : # planted/' '# planted'
     plant behaviour leftover "left a worktree behind" "a falsify --worktree that does not clean up" \
       sed t.sh 's/^    git -C "\$root" worktree remove --force "\$wt" >\/dev\/null 2>&1 || :$/    : # planted/' '# planted'
     plant behaviour unsince "ran nothing and did not say so" "a falsify --since that passes an empty selection in silence" \
@@ -989,7 +1058,7 @@ check_proofs() {
     plant behaviour anyfile "aimed at a test file" "a falsify that edits test files" \
       sed t.sh 's/^      looks_like_test_file "\${DEF_FILE\[\$i\]}" || continue$/      continue # planted/' '# planted'
     plant behaviour nodeadline "nothing timed it out" "a falsify with no deadline" \
-      sed t.sh 's/^      if \[\[ -n "\$deadline" \]\] \&\& ((waited >= deadline \* 10)); then$/      if false; then # planted/' '# planted'
+      sed t.sh 's/^    if \[\[ -n "\$deadline" \]\] \&\& ((waited >= deadline \* 10)); then$/    if false; then # planted/' '# planted'
     plant behaviour surrender "want 89" "a bisect that reports an all-skipped history as resolved" \
       sed t.sh 's/^    return 89$/    return 0 # planted/' '# planted'
     plant behaviour muted "hid run's refusal" "a flaky that mutes the harness's own refusals" \
@@ -1052,8 +1121,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=25 ;;
-    all) want_planted=37 ;;
+    behaviour) want_planted=26 ;;
+    all) want_planted=38 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

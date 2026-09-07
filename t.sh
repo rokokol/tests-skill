@@ -34,6 +34,11 @@
 #                             --worktree edits a checkout in a git worktree instead of
 #                             the files in front of you, so an editor, a watcher or a
 #                             commit made mid-run cannot meet a mutant
+#   t.sh prove [-b BUILD] [--timeout SECONDS] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [REF] -- CMD...
+#                             take the fix out of one commit (default HEAD), keep its
+#                             tests, and require the suite to go red: a commit that adds
+#                             a test and the code it pins has to demonstrate itself.
+#                             proven, or VACUOUS when the tests pass without the fix
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -48,13 +53,14 @@
 #   64  a usage error — a flag, the config, a missing --, an allow regex grep rejects
 #   70  the harness itself failed — a log it cannot write, a file it cannot put back
 #   79  CMD exited 0 but its log says it did not do what a pass claims (run)
-#   83  at least one defect SURVIVED: the suite did not notice it (falsify)
-#   84  a defect never let the suite finish within the deadline (falsify)
-#   85  the suite was red, or never really ran, before any edit was made (falsify)
+#   83  at least one defect SURVIVED: the suite did not notice it (falsify); the tests of
+#       the commit pass without its fix, VACUOUS (prove)
+#   84  a defect, or the fix taken away, never let the suite finish (falsify, prove)
+#   85  the suite was red, or never really ran, before any edit was made (falsify, prove)
 #   86  the runs disagreed with each other (flaky)
 #   87  the defect list has drifted: a find text no longer matches exactly once, or a
 #       defect declared as one nothing can catch was caught (falsify)
-#   88  a defect only stopped the build, so the tests were never asked (falsify)
+#   88  a defect, or the fix taken away, only stopped the build (falsify, prove)
 #   89  only commits that could not answer are left between good and bad (bisect)
 set -uo pipefail
 
@@ -706,6 +712,72 @@ looks_like_test_file() {
   return 1
 }
 
+# One run of the suite with a verdict, shared by falsify and prove. Assigns VERDICT —
+# caught, survived, unusable, timedout, or none — rather than printing it: a $(...) would
+# swallow a die inside run, and the kind of verdict comes from run's sidecar, never from
+# the number, because the suite's own exit 79 is not the harness's. run goes in a subshell
+# so its own refusal ends that run and reaches the caller as "none".
+#
+# The run is watched against a deadline. A neutered guard is often a loop that no longer
+# ends — the increment removed from a counter is the canonical one — and without a
+# deadline that mutant would hang the whole falsification. The suite is started in its
+# own process group, under job control, so the deadline can end the runner and everything
+# it spawned, not just the shell around them; without GNU timeout(1), which macOS does not
+# have, that is what a watchdog is.
+#
+# Reads three things from the calling subcommand's locals, which bash scopes dynamically:
+# `build`, the command that must succeed before the suite is asked; `deadline`, in
+# seconds, empty for none; and `pass`, the flags forwarded to run.
+VERDICT=""
+MUTANT_PGID=""
+suite_verdict() { # suite_verdict LOG CMD...
+  local log="$1" kind="" pid waited=0 grace=0
+  shift
+  VERDICT=none
+  if [[ -n "$build" ]]; then
+    if ! sh -c "$build" >"$log" 2>&1; then
+      VERDICT=unusable
+      return
+    fi
+  fi
+  set -m
+  (T_LOGFILE="$log" cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@") >/dev/null 2>&1 &
+  pid=$!
+  set +m
+  MUTANT_PGID="$pid"
+  # Tenths of a second, so a fast suite is not held for a whole second per defect
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ -n "$deadline" ]] && ((waited >= deadline * 10)); then
+      kill -TERM -- -"$pid" 2>/dev/null || :
+      while kill -0 "$pid" 2>/dev/null && ((grace < 50)); do
+        sleep 0.1
+        grace=$((grace + 1))
+      done
+      kill -KILL -- -"$pid" 2>/dev/null || :
+      wait "$pid" 2>/dev/null || :
+      MUTANT_PGID=""
+      VERDICT=timedout
+      return
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null || :
+  MUTANT_PGID=""
+  [[ ! -r "$log.verdict" ]] || kind=$(cat "$log.verdict")
+  case "$kind" in
+    pass) VERDICT=survived ;;
+    lied) VERDICT=unusable ;;
+    fail) VERDICT=caught ;;
+  esac
+}
+
+# The suite's process group does not get the Ctrl-C the terminal sends, so a trap ends it
+# shellcheck disable=SC2317  # reached through the traps
+end_mutant() {
+  [[ -z "$MUTANT_PGID" ]] || kill -TERM -- -"$MUTANT_PGID" 2>/dev/null || :
+}
+
 # A JSON string literal, for results.json: a consequence sentence may carry quotes
 json_str() {
   local s="$1"
@@ -942,69 +1014,10 @@ cmd_falsify() {
   # too — the caller would see an exit rather than a signal, and a loop around this
   # would keep going.
   # The suite runs in its own process group (see suite_verdict), which Ctrl-C at the
-  # terminal does not reach, so the group is ended here first
-  MUTANT_PGID=""
-  # shellcheck disable=SC2317  # reached through the traps
-  end_mutant() {
-    [[ -z "$MUTANT_PGID" ]] || kill -TERM -- -"$MUTANT_PGID" 2>/dev/null || :
-  }
+  # terminal does not reach, so the group is ended first
   trap 'restore_all; cleanup_worktree' EXIT
   trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$' INT
   trap 'end_mutant; restore_all; cleanup_worktree; trap - TERM; kill -TERM $$' TERM
-
-  # Assigns VERDICT — caught, survived, unusable, timedout, or none — rather than printing
-  # it: a $(...) would swallow a die inside run, and the kind of verdict comes from run's
-  # sidecar, never from the number, because the suite's own exit 79 is not the harness's.
-  # run goes in a subshell so its own refusal ends that run and reaches here as "none".
-  #
-  # The run is watched against a deadline. A neutered guard is often a loop that no
-  # longer ends — the increment removed from a counter is the canonical one — and without
-  # a deadline that mutant would hang the whole falsification. The suite is started in
-  # its own process group, under job control, so the deadline can end the runner and
-  # everything it spawned, not just the shell around them; without GNU timeout(1), which
-  # macOS does not have, that is what a watchdog is.
-  VERDICT=""
-  suite_verdict() { # suite_verdict LOG CMD...
-    local log="$1" kind="" pid waited=0 grace=0
-    shift
-    VERDICT=none
-    if [[ -n "$build" ]]; then
-      if ! sh -c "$build" >"$log" 2>&1; then
-        VERDICT=unusable
-        return
-      fi
-    fi
-    set -m
-    (T_LOGFILE="$log" cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@") >/dev/null 2>&1 &
-    pid=$!
-    set +m
-    MUTANT_PGID="$pid"
-    # Tenths of a second, so a fast suite is not held for a whole second per defect
-    while kill -0 "$pid" 2>/dev/null; do
-      if [[ -n "$deadline" ]] && ((waited >= deadline * 10)); then
-        kill -TERM -- -"$pid" 2>/dev/null || :
-        while kill -0 "$pid" 2>/dev/null && ((grace < 50)); do
-          sleep 0.1
-          grace=$((grace + 1))
-        done
-        kill -KILL -- -"$pid" 2>/dev/null || :
-        wait "$pid" 2>/dev/null || :
-        MUTANT_PGID=""
-        VERDICT=timedout
-        return
-      fi
-      sleep 0.1
-      waited=$((waited + 1))
-    done
-    wait "$pid" 2>/dev/null || :
-    MUTANT_PGID=""
-    [[ ! -r "$log.verdict" ]] || kind=$(cat "$log.verdict")
-    case "$kind" in
-      pass) VERDICT=survived ;;
-      lied) VERDICT=unusable ;;
-      fail) VERDICT=caught ;;
-    esac
-  }
 
   echo "== the suite is green before anything is broken"
   # Falsification measures the distance between green and red. Starting red there is no
@@ -1168,6 +1181,213 @@ cmd_falsify() {
   printf 'all %d defect(s) were caught by the suite.\n' "${#ran[@]}"
 }
 
+# A commit that adds a test and the code it pins is proven by taking the code back: with
+# the test kept and the fix gone, the suite has to go red. That is the revert-to-verify
+# ritual — write, run green, revert the fix, run red, put it back — done by the harness
+# rather than by hand, and it is what "a test and its fix are one commit" costs: the
+# commit has to demonstrate itself. The files of the commit are split by the same rule
+# falsify uses for a defect's file, test files stay, the rest is the fix.
+cmd_prove() {
+  local build="" deadline="" ref="HEAD" any_file="" worktree="" logdir="" seen_ref=""
+  local -a pass=()
+  while (($#)); do
+    case "$1" in
+      -b)
+        build="${2:?-b needs a command}"
+        shift 2
+        ;;
+      --timeout)
+        deadline="${2:?--timeout needs a number of seconds}"
+        [[ "$deadline" =~ ^[0-9]+$ ]] || die "prove: --timeout needs a number of seconds, got '$deadline'"
+        shift 2
+        ;;
+      --any-file)
+        any_file=1
+        shift
+        ;;
+      --worktree)
+        worktree=1
+        shift
+        ;;
+      -l)
+        logdir="${2:?-l needs a directory}"
+        pass+=("$1" "$2")
+        shift 2
+        ;;
+      -m | -p | -t)
+        pass+=("$1" "${2:?$1 needs a value}")
+        shift 2
+        ;;
+      --) break ;;
+      -*) die "prove: unexpected argument '$1' — the command goes after --" ;;
+      *)
+        [[ -z "$seen_ref" ]] || die "prove: only one commit may be given"
+        ref="$1"
+        seen_ref=1
+        shift
+        ;;
+    esac
+  done
+  [[ "${1:-}" == "--" ]] || die "prove: the suite command must follow -- (t.sh prove HEAD -- pytest -q)"
+
+  git rev-parse --git-dir >/dev/null 2>&1 || die "prove: not inside a git repository"
+  local commit parent
+  commit=$(git rev-parse --verify --quiet "$ref^{commit}") || die "prove: '$ref' is not a commit in this repository"
+  parent=$(git rev-parse --verify --quiet "$commit^") || die "prove: $ref has no parent to take its fix back to"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    die "prove: the working tree has uncommitted changes — commit or stash them first, so an interrupted restore cannot be mistaken for your own edits"
+  fi
+
+  # What the commit changed, split the way falsify splits a defect's file: test files
+  # stay, everything else is the fix. A commit that changed no source has nothing to
+  # take away; one that changed no test is provable only by tests written before it,
+  # which is worth saying.
+  local f
+  local -a src=() tests=()
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if [[ -z "$any_file" ]] && looks_like_test_file "$f"; then
+      tests+=("$f")
+    else
+      src+=("$f")
+    fi
+  done < <(git diff --name-only "$parent" "$commit" --)
+  ((${#src[@]} > 0)) ||
+    die "prove: $ref changes no source file, only ${#tests[@]} test file(s) — there is no fix to take away (--any-file counts every file)"
+  ((${#tests[@]} > 0)) ||
+    echo "t.sh: prove: $ref changes no test file — whatever notices its fix going away was written before it" >&2
+
+  POLICY_LOGDIR=""
+  load_config
+  [[ -n "$logdir" ]] || logdir="${T_LOGDIR:-${POLICY_LOGDIR:-.test-logs}}"
+  mkdir -p "$logdir" || fatal "prove: cannot create $logdir"
+  logdir=$(cd -- "$logdir" && pwd)
+
+  # In place when the commit is what is checked out and nobody asked otherwise; in a
+  # worktree at the commit when it is not, or on request — the same trade as falsify's
+  local root wt=""
+  root=$(pwd)
+  if [[ -n "$worktree" || "$commit" != "$(git rev-parse HEAD)" ]]; then
+    wt=$(mktemp -d "${TMPDIR:-/tmp}/t.sh.XXXXXX")/wt || fatal "prove: cannot create a directory for the worktree"
+    git worktree add --detach "$wt" "$commit" >/dev/null 2>&1 || fatal "prove: git could not add a worktree at $wt"
+    cd -- "$wt" || fatal "prove: cannot enter the worktree at $wt"
+  fi
+  # shellcheck disable=SC2317  # reached through the traps
+  cleanup_worktree() {
+    [[ -n "$wt" ]] || return 0
+    cd -- "$root" || :
+    git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 || :
+    rm -rf "$(dirname -- "$wt")"
+    wt=""
+  }
+
+  # The fix as it is, held in memory for the restore, and as it was before the commit,
+  # for the taking away. A file the commit added has no "before" and is removed; a file
+  # the commit deleted has no "now" and comes back.
+  local i __c
+  local -a originals=() present=() befores=() had_before=()
+  for f in "${src[@]}"; do
+    if [[ -e "$f" ]]; then
+      slurp __c "$f" || fatal "prove: cannot read $f"
+      originals+=("$__c")
+      present+=(1)
+    else
+      originals+=("")
+      present+=(0)
+    fi
+    if git cat-file -e "$parent:$f" 2>/dev/null; then
+      __c=$(git show "$parent:$f" && printf x) || fatal "prove: cannot read $f as it was before $ref"
+      befores+=("${__c%x}")
+      had_before+=(1)
+    else
+      befores+=("")
+      had_before+=(0)
+    fi
+  done
+
+  # shellcheck disable=SC2317  # reached through the traps
+  restore_all() {
+    local i
+    for i in "${!src[@]}"; do
+      if ((present[i])); then
+        printf '%s' "${originals[$i]}" >"${src[$i]}" 2>/dev/null || :
+      else
+        rm -f "${src[$i]}" 2>/dev/null || :
+      fi
+    done
+  }
+  trap 'restore_all; cleanup_worktree' EXIT
+  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$' INT
+  trap 'end_mutant; restore_all; cleanup_worktree; trap - TERM; kill -TERM $$' TERM
+
+  echo "== the suite is green with the fix in place"
+  local started=$SECONDS
+  suite_verdict "$logdir/prove-with-fix.log" "$@"
+  if [[ -z "$deadline" ]]; then
+    deadline=$(((SECONDS - started) * 5))
+    ((deadline >= 20)) || deadline=20
+  fi
+  case "$VERDICT" in
+    survived) ;;
+    caught)
+      echo "t.sh: prove: the suite is red at $ref with the fix in place — there is no green to take away" >&2
+      return 85
+      ;;
+    unusable)
+      echo "t.sh: prove: the suite did not really run at $ref — check the build command and $logdir/prove-with-fix.log" >&2
+      return 85
+      ;;
+    timedout)
+      echo "t.sh: prove: the suite did not finish within the --timeout with the fix in place" >&2
+      return 85
+      ;;
+    *) fatal "prove: the run with the fix ended without a verdict — the harness could not run the suite (see $logdir)" ;;
+  esac
+
+  echo "== the fix is taken away, and the tests are kept"
+  for i in "${!src[@]}"; do
+    if ((had_before[i])); then
+      printf '%s' "${befores[$i]}" >"${src[$i]}" || fatal "prove: cannot write ${src[$i]} — nothing was measured"
+      printf '  - %s\n' "${src[$i]}"
+    else
+      rm -f "${src[$i]}" || fatal "prove: cannot remove ${src[$i]} — nothing was measured"
+      printf '  - %s (added by the commit, removed)\n' "${src[$i]}"
+    fi
+  done
+  suite_verdict "$logdir/prove-without-fix.log" "$@"
+  restore_all
+  trap - EXIT INT TERM
+  git diff --quiet -- "${src[@]}" && [[ -z "$(git status --porcelain -- "${src[@]}")" ]] ||
+    fatal "prove: the fix was not put back as it was — restore it from git before doing anything else"
+  cleanup_worktree
+
+  echo
+  case "$VERDICT" in
+    caught)
+      printf 'proven: without its fix, the tests at %s go red\n' "$ref"
+      return 0
+      ;;
+    survived)
+      printf 'VACUOUS: the tests at %s pass without its fix — they pin nothing the commit did\n' "$ref" >&2
+      if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        for f in "${src[@]}"; do
+          printf '::error file=%s,title=prove::VACUOUS: the tests at %s pass without this change\n' "$f" "$ref"
+        done
+      fi
+      return 83
+      ;;
+    unusable)
+      printf 'unusable: without the fix nothing builds, so the tests were never asked — the build and the behaviour changed in one commit\n' >&2
+      return 88
+      ;;
+    timedout)
+      printf 'TIMEDOUT: without the fix the suite did not finish within %ss, so it never gave a verdict\n' "$deadline" >&2
+      return 84
+      ;;
+    *) fatal "prove: the run without the fix ended without a verdict" ;;
+  esac
+}
+
 cmd="${1:-}"
 (($# == 0)) || shift
 case "$cmd" in
@@ -1176,6 +1396,7 @@ case "$cmd" in
   bisect) cmd_bisect "$@" ;;
   bisect-probe) cmd_bisect_probe "$@" ;;
   falsify) cmd_falsify "$@" ;;
+  prove) cmd_prove "$@" ;;
   -h | --help | help) usage ;;
   '')
     usage >&2
