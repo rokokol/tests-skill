@@ -288,12 +288,14 @@ cmd_run() {
 
   # The same for the allow regex. It used to be applied only inside scan_log, where grep
   # rejecting it left the filtered log empty, and an empty log has no markers — so a typo
-  # in `allow` turned every run into a pass, silently. grep exits 2 for a regex it cannot
-  # compile and 1 for a valid one that matches nothing in /dev/null.
-  local allow="${T_ALLOW:-$POLICY_ALLOW}" rc=0
+  # in `allow` turned every run into a pass, silently. Judged by what grep says rather
+  # than by its status, and against a line of input rather than /dev/null: GNU and BSD grep
+  # exit 2 on a regex they cannot compile, busybox's does not compile it at all until there
+  # is a line to match, and every one of them complains on stderr once it does.
+  local allow="${T_ALLOW:-$POLICY_ALLOW}" complaint=""
   if [[ -n "$allow" ]]; then
-    grep -E -- "$allow" /dev/null >/dev/null 2>&1 || rc=$?
-    ((rc != 2)) || die "allow: '$allow' is not a regex grep -E accepts"
+    complaint=$(printf 'x\n' | grep -E -- "$allow" 2>&1 >/dev/null || :)
+    [[ -z "$complaint" ]] || die "allow: '$allow' is not a regex grep -E accepts — $complaint"
   fi
 
   mkdir -p "$logdir" || fatal "run: cannot create $logdir"
@@ -588,8 +590,10 @@ cmd_bisect() {
   local status=${ps[0]} culprit code
   git bisect log >"$logdir/bisect.log" 2>/dev/null || :
 
-  if grep -q "^bisect found first '" "$out"; then
-    culprit=$(sed -n "s/^\([0-9a-f]\{7,40\}\) is the first '[a-z]*' commit$/\1/p" "$out" | head -1)
+  # "bisect found first bad commit" in one git, "first 'bad' commit" in another, and the
+  # term is whatever `git bisect terms` says: the quotes and the word are both optional
+  if grep -qE "^bisect found first '?[a-z]*'? commit" "$out"; then
+    culprit=$(sed -n "s/^\([0-9a-f]\{7,40\}\) is the first '\{0,1\}[a-z]*'\{0,1\} commit$/\1/p" "$out" | head -1)
     printf 't.sh: first bad commit is %s — the session is in %s/bisect.log, replayable with git bisect replay\n' \
       "$culprit" "$logdir"
     return 0
@@ -784,7 +788,11 @@ cmd_falsify() {
       continue
     fi
 
-    mutated="${content//"$find"/"$replace"}"
+    # Cut around the one occurrence rather than ${content//"$find"/"$replace"}: bash 3.2
+    # keeps the quotes around the replacement as literal text, so every mutant on macOS
+    # was `"if false"` and unusable, and unquoted, a `&` in the replacement is the match
+    # itself from bash 5.2 on. Prefix and suffix have neither problem.
+    mutated="${content%%"$find"*}$replace${content#*"$find"}"
     # Checked, because a write that fails leaves the pristine code in place, the suite
     # then passes against it, and that would be reported as a survivor: a read-only file
     # once made a guard the suite does cover read as one nobody checks

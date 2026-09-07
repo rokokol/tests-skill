@@ -44,7 +44,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 # the harness on the 3.2 that macOS ships, while `env bash` would find Homebrew's 5.
 tsh() { "$BASH" "$HERE/t.sh" "$@"; }
 
-work=$(mktemp -d)
+# With a template, because the BSD mktemp on macOS wants one
+work=$(mktemp -d "${TMPDIR:-/tmp}/check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 mode="${1:-all}"
@@ -69,28 +70,6 @@ check_lint() {
   for s in "${scripts[@]}"; do bash -n "$s"; done
   shellcheck "${scripts[@]}"
   shfmt -d -i 2 -ci "${scripts[@]}"
-
-  echo "== nothing here needs a bash newer than the one macOS ships"
-  # t.sh is meant to be vendored into other repositories, and some of them run CI on macOS,
-  # which ships bash 3.2. Two of these were found the expensive way, on a runner none of this
-  # was written on: `[[ -v VAR ]]` is 4.2+, `mapfile` is 4.0+, `declare -A` is 4.0+.
-  # `sort -V` is a neighbouring trap — not a bash version but a GNU one, absent from BSD sort.
-  #
-  # Every literal is split by a bracket expression so the pattern cannot match its own source
-  # line, and the planted constructs live in a fixture for the same reason: a guard that
-  # reddens the commit introducing it gets deleted rather than fixed.
-  bash4_pattern='\[\[[^]]*[-]v [A-Za-z_]|mapfil[e] |readarra[y] |declar[e] -A|loca[l] -A|\$\{[A-Za-z_]+,[,]\}|\$\{[A-Za-z_]+\^[\^]\}|sor[t] -[A-Za-z]*V'
-  bash4=$(grep -nE "$bash4_pattern" "${scripts[@]}" | grep -vE ':[[:space:]]*#' || :)
-  [[ -z "$bash4" ]] || fail "a construct newer than bash 3.2 (or GNU-only) in a script meant to travel:"$'\n'"$bash4"
-  planted_count=0
-  while IFS= read -r planted; do
-    [[ -z "$planted" || "$planted" == \#* ]] && continue
-    planted_count=$((planted_count + 1))
-    printf '%s\n' "$planted" >"$work/planted.sh"
-    grep -qE "$bash4_pattern" "$work/planted.sh" ||
-      fail "the bash-3.2 guard does not catch: $planted"
-  done <tests/fixtures/bash4-constructs.sh
-  ((planted_count >= 8)) || fail "only $planted_count constructs were read from the fixture — the extractor is broken"
 
   echo "== the workflows are valid, and their tools come from the lock rather than a registry"
   # actionlint needs a git project to find workflows in, which the throwaway copies below are
@@ -696,8 +675,13 @@ check_proofs() {
     # the way a hand-written one did with every new file. Untracked files that are not
     # ignored come along too: a check being written must be provable before it is
     # committed, and `git archive` would only carry HEAD.
-    mkdir -p "$dest"
-    git ls-files -z --cached --others --exclude-standard | tar -c --null -T - -f - | tar -x -C "$dest" -f -
+    # cp rather than tar: `tar --null -T -` is GNU and bsdtar, and the busybox tar a
+    # bash-3.2 container brings along has neither
+    local f
+    git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do
+      mkdir -p "$dest/$(dirname "$f")"
+      cp -p "$f" "$dest/$f"
+    done
   }
   nested() { (cd "$1" && T_CHECK_NESTED=1 "$BASH" ./check.sh "$mode" >/dev/null 2>&1); }
 
@@ -816,8 +800,10 @@ check_proofs() {
     # obvious to git
     plant behaviour trailing "byte for byte" "a falsify that loses the trailing newline" \
       sed t.sh 's/__content=\$(cat "\$2" \&\& printf x)/__content=$(cat "$2")/' '__content=$(cat "$2")'
+    # Replaced by a no-op that still reads the variable, or the copy fails on shellcheck's
+    # unused-variable warning instead of on the check
     plant behaviour badallow "grep cannot compile" "a run that applies an allow regex it never checked" \
-      drop t.sh '((rc != 2)) || die "allow:'
+      sed t.sh 's/^    \[\[ -z "\$complaint" \]\] || die "allow:.*$/    : "$complaint" # planted/' '# planted'
     plant behaviour carryon "carried on after an interrupt" "a falsify whose interrupt handler returns" \
       sed t.sh "s/^  trap 'restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'restore_all' INT/" "trap 'restore_all' INT"
     plant behaviour surrender "want 89" "a bisect that reports an all-skipped history as resolved" \
@@ -834,15 +820,36 @@ check_proofs() {
     # unreferenced, and the copy would then fail on shellcheck instead of on the check
     plant behaviour nosidecar "did not record" "a run that keeps its verdict to itself" \
       sed t.sh 's|>"\$log\.verdict"|>/dev/null|' 'printf '"'"'%s\n'"'"' "$RUN_VERDICT" >/dev/null'
-    plant behaviour nolog "nowhere to put its log" "a run that cannot write its log" \
-      drop t.sh ': >"$log" || fatal'
     if [[ $EUID -eq 0 ]]; then
-      echo "   skipped: the unwritten-mutant check itself is skipped as root"
+      echo "   skipped: the unwritable-log and unwritten-mutant checks themselves are skipped as root"
     else
+      plant behaviour nolog "nowhere to put its log" "a run that cannot write its log" \
+        drop t.sh ': >"$log" || fatal'
       plant behaviour unwritten "could not write" "a falsify that does not check its write" \
         sed t.sh 's/ || fatal "falsify: cannot write \$file.*$/ # planted/' '# planted'
     fi
   }
+
+  # t.sh travels to repositories that run CI on macOS, which ships bash 3.2, and that is
+  # the one place it has broken before. A grep for bash-4 syntax was the guard once; a grep
+  # is a proxy, matching the constructs somebody thought to list, and it let nine through
+  # on its first audit. The mechanism is this: the behaviour half under the real 3.2, on a
+  # macOS runner, with two constructs planted that only a 3.2 rejects. Under a newer bash
+  # they are no defect at all, so this block runs only where T_CHECK_BASH32 says which
+  # bash this is, and first checks that claim.
+  if [[ -n "${T_CHECK_BASH32:-}" ]]; then
+    echo "== this bash is the 3.2 the proof is about"
+    ((BASH_VERSINFO[0] == 3)) ||
+      fail "T_CHECK_BASH32 is set, but this is bash $BASH_VERSION — on macOS, run: /bin/bash ./check.sh behaviour"
+    ! "$BASH" -c 'declare -A m' >/dev/null 2>&1 || fail "T_CHECK_BASH32 is set, but this bash accepts declare -A"
+    plant behaviour bash4-declare "(got 70)" "a harness that declares an associative array" \
+      awk t.sh '{ print } /^set -uo pipefail$/ { print "declare -A t_sh_probe || exit 70" }' 'declare -A t_sh_probe'
+    # mapfile is not found, the marker list stays empty, and run refuses every command —
+    # the class of regression this bash was found unable to run
+    # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+    plant behaviour bash4-mapfile "expected 79, got 64" "a harness reading its markers with mapfile" \
+      sed t.sh 's/^    while IFS= read -r line; do MARKER_PATTERNS+=("\$line"); done < <(read_markers "\$file")$/    mapfile -t MARKER_PATTERNS < <(read_markers "$file")/' 'mapfile -t MARKER_PATTERNS'
+  fi
 
   # Two mutations, so a hand-written block: the duplicate has to be present in the set's
   # own fixture too, or the copy fails on the dead-entry rule first and the duplicate rule
