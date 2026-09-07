@@ -727,7 +727,15 @@ cmd_falsify() {
       printf '%s' "${originals[$i]}" >"${files[$i]}" 2>/dev/null || :
     done
   }
-  trap 'restore_all' EXIT INT TERM
+  # EXIT covers a die or a fatal. INT and TERM restore and then die of the same signal,
+  # because a handler that merely returns lets the script carry on: written that way,
+  # Ctrl-C restored the file and the loop ran the next defect, with the interrupted one
+  # gone from the report and still counted in the summary. `exit 130` would be wrong
+  # too — the caller would see an exit rather than a signal, and a loop around this
+  # would keep going.
+  trap 'restore_all' EXIT
+  trap 'restore_all; trap - INT; kill -INT $$' INT
+  trap 'restore_all; trap - TERM; kill -TERM $$' TERM
 
   suite_verdict() { # prints caught | survived | unusable
     if [[ -n "$build" ]]; then
@@ -796,6 +804,9 @@ cmd_falsify() {
         printf 'unusable  %s: the edit stopped it building, so the tests were never asked\n' "$name"
         survived+=("$name")
         ;;
+      # An empty verdict is a suite run that ended without one — killed, most likely.
+      # Silently matching nothing here is how a defect once vanished from the report.
+      *) fatal "falsify: no verdict for $name — the suite run ended without one" ;;
     esac
   done
 

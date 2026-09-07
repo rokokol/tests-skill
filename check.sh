@@ -614,6 +614,27 @@ cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
   fail "falsify did not restore impl.sh byte for byte"
 git -C "$fal" diff --quiet || fail "falsify left the working tree dirty"
 
+echo "== an interrupted falsify dies interrupted, with the source put back"
+# A trap that only restored and returned let the loop carry on: Ctrl-C stopped nothing,
+# the interrupted defect vanished from the report, and the summary still counted it
+printf '#!/bin/sh\nsleep 1\nsh suite.sh\n' >"$fal/slow.sh"
+git -C "$fal" add slow.sh && git -C "$fal" commit -q -m "a slow suite"
+# exec, so the PID below is t.sh's own and the signal reaches the trap being tested; and
+# under job control, because without it a script's background jobs IGNORE SIGINT, an
+# ignored signal cannot be trapped, and this check would find nothing to interrupt
+set -m
+(cd "$fal" && exec "$HERE/t.sh" falsify -l "$work/logs" -- sh slow.sh) >"$work/interrupted.out" 2>&1 &
+falsify_pid=$!
+set +m
+sleep 0.5
+kill -INT "$falsify_pid"
+status=0
+wait "$falsify_pid" || status=$?
+((status >= 128)) || fail "falsify carried on after an interrupt (got $status):"$'\n'"$(cat "$work/interrupted.out")"
+! grep -q 'defect(s)' "$work/interrupted.out" || fail "an interrupted falsify still printed its summary"
+cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" || fail "an interrupted falsify did not put impl.sh back"
+git -C "$fal" diff --quiet || fail "an interrupted falsify left the working tree dirty"
+
 echo "== a mutant that could not be written is not a survivor"
 # A write that fails leaves the pristine code in place; the suite passes against it, and
 # that used to be reported as SURVIVED for a guard the suite does cover. git tracks only
@@ -836,6 +857,15 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   chmod +x "$work/badallow/t.sh"
   ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
   catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
+
+  echo "== the interrupt check is able to fail: a trap that restores and carries on"
+  copy "$work/carryon"
+  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
+  sed "s/^  trap 'restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'restore_all' INT/" t.sh >"$work/carryon/t.sh.new" &&
+    mv "$work/carryon/t.sh.new" "$work/carryon/t.sh"
+  chmod +x "$work/carryon/t.sh"
+  grep -qF "trap 'restore_all' INT" "$work/carryon/t.sh" || fail "the carry-on fixture was not planted"
+  catches "$work/carryon" "carried on after an interrupt" "a falsify whose interrupt handler returns"
 
   echo "== the unwritten-mutant check is able to fail: a write taken on trust"
   copy "$work/unwritten"
