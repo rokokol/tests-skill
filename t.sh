@@ -183,10 +183,19 @@ scan_log() {
 
   # T_ALLOW is the ad-hoc override and wins over the repository's own `allow` line
   local allow="${T_ALLOW:-$POLICY_ALLOW}"
-  local source="$log"
+  local source="$log" rc=0
   if [[ -n "$allow" ]]; then
     source="$log.scanned"
-    grep -Ev -- "$allow" "$log" >"$source" || :
+    grep -Ev -- "$allow" "$log" >"$source" || rc=$?
+    # 1 means every line was excused, which is odd but legitimate. Anything above it
+    # means the filter did not run, and a log it did not run on must not read as clean.
+    # cmd_run refuses such a regex before CMD starts; this is the guard behind that one,
+    # for the day it is bypassed — a `die` here would only exit the $(...) around us.
+    if ((rc > 1)); then
+      printf 'allow\tthe allow regex could not be applied (grep exited %d), so the log was not scanned\n' "$rc"
+      rm -f "$source"
+      return 0
+    fi
   fi
 
   local pat line found=1
@@ -248,6 +257,16 @@ cmd_run() {
   # Before the command runs, and from this shell rather than a subshell, so a broken
   # marker set stops the run instead of quietly making every run a pass
   load_markers
+
+  # The same for the allow regex. It used to be applied only inside scan_log, where grep
+  # rejecting it left the filtered log empty, and an empty log has no markers — so a typo
+  # in `allow` turned every run into a pass, silently. grep exits 2 for a regex it cannot
+  # compile and 1 for a valid one that matches nothing in /dev/null.
+  local allow="${T_ALLOW:-$POLICY_ALLOW}" rc=0
+  if [[ -n "$allow" ]]; then
+    grep -E -- "$allow" /dev/null >/dev/null 2>&1 || rc=$?
+    ((rc != 2)) || die "allow: '$allow' is not a regex grep -E accepts"
+  fi
 
   mkdir -p "$logdir" || fatal "run: cannot create $logdir"
   local log="${T_LOGFILE:-}"

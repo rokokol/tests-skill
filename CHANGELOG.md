@@ -7,6 +7,10 @@ section for work that has landed but not shipped would never close
 
 ## 2026-09-07
 
+### Fixed
+
+- **an `allow` regex grep could not compile turned every run into a pass.** The excuse list is applied with `grep -Ev` before the scan; a regex grep rejects left the filtered log empty, an empty log has no markers, and `run` reported `pass — log clean` for a run that said `collected 0 items`. The worst shape a guard can take, because a typo in the excuse list switched the whole check off without a word. `run` now refuses such a regex before the command starts, with exit 64, and the scan itself reports a filter that did not run as a finding rather than as silence
+
 ### Changed
 
 - **the harness's own exit codes moved out of the range test runners use.** `run` reported a lying log as 3, `flaky` reported disagreement as 4, and every usage or harness error was 2. GNU make exits 2 on any error, pytest uses 2 to 5, `mix test` fails with 2, and cargo-nextest exits 4 for "no tests ran", so a probe that skipped on 2 skipped every commit where `make test` failed, and a `flaky` verdict was indistinguishable from nextest's own empty run. The verdicts now sit in a band nothing else claims: 64 for a usage error, 70 for a failure of the harness itself, 79 for a run that exited 0 while its log said otherwise, 86 for runs that disagreed. Anything checking the old numbers must be updated

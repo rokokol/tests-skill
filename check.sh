@@ -248,6 +248,8 @@ policy 'pattern thread panicked in setup'
 in_conf 79 "a pattern named in the config applies" -- sh -c 'echo "thread panicked in setup"; exit 0'
 policy 'allow expected: no tests ran'
 in_conf 0 "a line the config excuses is excused" -- sh -c 'echo "expected: no tests ran"; exit 0'
+policy 'allow expected('
+in_conf 64 "an allow regex the config names but grep cannot compile refuses" -- sh -c 'echo "collected 0 items"; exit 0'
 # flaky obeys the same policy: a repository that named its log directory once should not
 # find one subcommand writing somewhere else
 policy 'logdir .from-config'
@@ -333,6 +335,12 @@ status=0
 T_ALLOW='something else entirely' ./t.sh run -t 0 -l "$work/logs" \
   -- sh -c 'echo "expected: no tests ran"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 79)) || fail "T_ALLOW excused a line it does not name (got $status) — it excuses everything"
+# A regex grep cannot compile used to leave the filtered log empty, and an empty log has
+# no markers: the worst shape, because a typo in the excuse list made every run a pass
+status=0
+T_ALLOW='expected(' ./t.sh run -t 0 -l "$work/logs" \
+  -- sh -c 'echo "collected 0 items"; exit 0' >/dev/null 2>&1 || status=$?
+((status == 64)) || fail "a regex grep cannot compile was accepted as an allow list (got $status) — an empty filtered log reads as clean"
 
 echo "== run refuses to start when its log cannot be written"
 # A lost log silently cancels half of what this harness is for, so it is a refusal up
@@ -712,6 +720,13 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
   grep -qF '__content=$(cat "$2")' "$work/trailing/t.sh" || fail "the trailing-newline fixture was not planted"
   catches "$work/trailing" "byte for byte" "a falsify that loses the trailing newline"
+
+  echo "== the allow-regex refusal is able to fail: the check that runs before the command"
+  copy "$work/badallow"
+  sed '/^    ((rc != 2)) || die "allow:/d' t.sh >"$work/badallow/t.sh.new" && mv "$work/badallow/t.sh.new" "$work/badallow/t.sh"
+  chmod +x "$work/badallow/t.sh"
+  ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
+  catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
 
   echo "== the verdict sidecar check is able to fail"
   copy "$work/nosidecar"
