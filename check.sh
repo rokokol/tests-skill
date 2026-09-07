@@ -584,7 +584,7 @@ DEFECTS
 
   status=0
   fal_out=$(cd "$fal" && tsh falsify -b 'sh -n impl.sh' -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
-  ((status == 1)) || fail "falsify exited $status where defects went unnoticed:"$'\n'"$fal_out"
+  ((status == 83)) || fail "falsify exited $status where a defect went unnoticed (want 83):"$'\n'"$fal_out"
   grep -q '^caught    clamp/negative' <<<"$fal_out" ||
     fail "falsify did not credit the suite for the guard it does cover:"$'\n'"$fal_out"
   grep -q '^SURVIVED  strip/spaces' <<<"$fal_out" ||
@@ -595,11 +595,24 @@ DEFECTS
   # evidence that any test noticed anything
   grep -q '^unusable  syntax/broken' <<<"$fal_out" ||
     fail "falsify credited the suite for an edit that merely stopped the code building:"$'\n'"$fal_out"
-
   echo "== falsify puts the source back byte for byte"
   cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
     fail "falsify did not restore impl.sh byte for byte"
   git -C "$fal" diff --quiet || fail "falsify left the working tree dirty"
+
+  echo "== the exit code says which kind of not-caught ended the run"
+  # A weak suite (83), a list that drifted (87), an edit that only broke the build (88).
+  # Folded into one status, CI could not tell the tests being weak from the list having
+  # rotted. After the byte-for-byte check above, because these refuse on a dirty tree.
+  status=0
+  (cd "$fal" && tsh falsify -l "$work/logs" gone -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 87)) || fail "falsify exited $status on a list whose only defect is stale (want 87)"
+  status=0
+  (cd "$fal" && tsh falsify -b 'sh -n impl.sh' -l "$work/logs" syntax -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 88)) || fail "falsify exited $status on a list whose only defect breaks the build (want 88)"
+  status=0
+  (cd "$fal" && tsh falsify -l "$work/logs" clamp -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 0)) || fail "falsify exited $status on a list whose only defect is caught (want 0)"
 
   echo "== an interrupted falsify dies interrupted, with the source put back"
   # A trap that only restored and returned let the loop carry on: Ctrl-C stopped nothing,
@@ -640,11 +653,11 @@ DEFECTS
   echo "== falsify refuses the situations where its answer would be meaningless"
   status=0
   (cd "$fal" && tsh falsify -l "$work/logs" -- sh -c 'exit 1') >/dev/null 2>&1 || status=$?
-  ((status == 64)) || fail "falsify measured against an already-failing suite (got $status)"
+  ((status == 85)) || fail "falsify measured against an already-failing suite (got $status, want 85)"
   status=0
   (cd "$fal" && tsh falsify -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0') \
     >/dev/null 2>&1 || status=$?
-  ((status == 64)) || fail "falsify measured against a suite that never really ran (got $status)"
+  ((status == 85)) || fail "falsify measured against a suite that never really ran (got $status, want 85)"
   echo dirt >"$fal/impl.sh.tmp" && mv "$fal/impl.sh.tmp" "$fal/impl.sh"
   status=0
   (cd "$fal" && tsh falsify -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?

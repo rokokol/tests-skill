@@ -37,7 +37,11 @@
 #   64  a usage error — a flag, the config, a missing --, an allow regex grep rejects
 #   70  the harness itself failed — a log it cannot write, a file it cannot put back
 #   79  CMD exited 0 but its log says it did not do what a pass claims (run)
+#   83  at least one defect SURVIVED: the suite did not notice it (falsify)
+#   85  the suite was red, or never really ran, before any edit was made (falsify)
 #   86  the runs disagreed with each other (flaky)
+#   87  the defect list has drifted: a find text no longer matches exactly once (falsify)
+#   88  a defect only stopped the build, so the tests were never asked (falsify)
 #   89  only commits that could not answer are left between good and bad (bisect)
 set -uo pipefail
 
@@ -654,7 +658,7 @@ count_occurrences() {
 }
 
 cmd_falsify() {
-  local defects="tests/defects.sh" build="" filter=""
+  local defects="tests/defects.sh" build="" filter="" logdir=""
   local -a pass=()
   while (($#)); do
     case "$1" in
@@ -666,7 +670,14 @@ cmd_falsify() {
         build="${2:?-b needs a command}"
         shift 2
         ;;
-      -l | -m | -p | -t)
+      -l)
+        # Kept here as well as forwarded: the suite runs go through run, but the log
+        # each run's verdict is read from has to be a path this function chose
+        logdir="${2:?-l needs a directory}"
+        pass+=("$1" "$2")
+        shift 2
+        ;;
+      -m | -p | -t)
         pass+=("$1" "${2:?$1 needs a value}")
         shift 2
         ;;
@@ -680,6 +691,11 @@ cmd_falsify() {
   done
   [[ "${1:-}" == "--" ]] || die "falsify: the suite command must follow -- (t.sh falsify -- pytest -q)"
   [[ -r "$defects" ]] || die "falsify: cannot read $defects — write the defect list first (see templates/defects.sh)"
+  # The same policy run obeys, for the same reason flaky reads it: one log directory
+  POLICY_LOGDIR=""
+  load_config
+  [[ -n "$logdir" ]] || logdir="${T_LOGDIR:-${POLICY_LOGDIR:-.test-logs}}"
+  mkdir -p "$logdir" || fatal "falsify: cannot create $logdir"
 
   # A dirty tree makes an interrupted restore indistinguishable from your own edits, and
   # this is a command that edits your source on purpose
@@ -741,34 +757,50 @@ cmd_falsify() {
   trap 'restore_all; trap - INT; kill -INT $$' INT
   trap 'restore_all; trap - TERM; kill -TERM $$' TERM
 
-  suite_verdict() { # prints caught | survived | unusable
+  # Assigns VERDICT — caught, survived, unusable, or none — rather than printing it: a
+  # $(...) would swallow a die inside run, and the kind of verdict comes from run's
+  # sidecar, never from the number, because the suite's own exit 79 is not the harness's.
+  # run goes in a subshell so its own refusal ends that run and reaches here as "none".
+  VERDICT=""
+  local runs=0
+  suite_verdict() {
+    VERDICT=none
     if [[ -n "$build" ]]; then
       if ! sh -c "$build" >/dev/null 2>&1; then
-        printf 'unusable'
+        VERDICT=unusable
         return
       fi
     fi
-    local status=0
-    cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@" >/dev/null 2>&1 || status=$?
-    case "$status" in
-      0) printf 'survived' ;;
-      79) printf 'unusable' ;;
-      *) printf 'caught' ;;
+    runs=$((runs + 1))
+    local log="$logdir/falsify-$$-$runs.log" kind=""
+    (T_LOGFILE="$log" cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@") >/dev/null 2>&1 || :
+    [[ ! -r "$log.verdict" ]] || kind=$(cat "$log.verdict")
+    case "$kind" in
+      pass) VERDICT=survived ;;
+      lied) VERDICT=unusable ;;
+      fail) VERDICT=caught ;;
     esac
   }
 
   echo "== the suite is green before anything is broken"
   # Falsification measures the distance between green and red. Starting red there is no
   # distance, and every "caught" below would be meaningless.
-  local baseline
-  baseline=$(suite_verdict "$@")
-  case "$baseline" in
-    caught) die "falsify: the suite is already failing — fix that first, or nothing measured here means anything" ;;
-    unusable) die "falsify: the suite did not really run before any edit — check the build command and the log" ;;
+  suite_verdict "$@"
+  case "$VERDICT" in
+    survived) ;;
+    caught)
+      echo "t.sh: falsify: the suite is already failing — fix that first, or nothing measured here means anything" >&2
+      return 85
+      ;;
+    unusable)
+      echo "t.sh: falsify: the suite did not really run before any edit — check the build command and the log" >&2
+      return 85
+      ;;
+    *) fatal "falsify: the baseline run ended without a verdict — the harness could not run the suite (see $logdir)" ;;
   esac
 
-  local i name file find replace why verdict content mutated occurrences pristine
-  local -a survived=() ran=()
+  local i name file find replace why content mutated occurrences pristine
+  local -a caught=() survived=() stale=() unusable=() ran=()
   for i in "${!DEF_NAME[@]}"; do
     name="${DEF_NAME[$i]}"
     [[ -z "$filter" || "$name" == *"$filter"* ]] || continue
@@ -784,7 +816,7 @@ cmd_falsify() {
       # Not guessed at: a list that no longer describes the code has to say so, or it
       # quietly stops testing the thing it was written for
       printf 'stale     %s: its find text matches %s times in %s, not once\n' "$name" "$occurrences" "$file"
-      survived+=("$name")
+      stale+=("$name")
       continue
     fi
 
@@ -797,23 +829,27 @@ cmd_falsify() {
     # then passes against it, and that would be reported as a survivor: a read-only file
     # once made a guard the suite does cover read as one nobody checks
     printf '%s' "$mutated" >"$file" || fatal "falsify: cannot write $file — the tree is untouched, and nothing was measured"
-    verdict=$(suite_verdict "$@")
+    suite_verdict "$@"
     printf '%s' "$content" >"$file"
 
-    case "$verdict" in
-      caught) printf 'caught    %s\n' "$name" ;;
+    case "$VERDICT" in
+      caught)
+        printf 'caught    %s\n' "$name"
+        caught+=("$name")
+        ;;
       survived)
         printf 'SURVIVED  %s: %s\n' "$name" "$why"
         survived+=("$name")
         ;;
       unusable)
         # The compiler noticed the syntax; the tests said nothing. Calling this "caught"
-        # is how a suite gets credit for coverage it does not have.
+        # is how a suite gets credit for coverage it does not have — and calling it
+        # SURVIVED, as this once did, blamed the suite for an edit that never reached it.
         printf 'unusable  %s: the edit stopped it building, so the tests were never asked\n' "$name"
-        survived+=("$name")
+        unusable+=("$name")
         ;;
-      # An empty verdict is a suite run that ended without one — killed, most likely.
-      # Silently matching nothing here is how a defect once vanished from the report.
+      # No verdict is a suite run that ended without one — killed, most likely. Silently
+      # matching nothing here is how a defect once vanished from the report.
       *) fatal "falsify: no verdict for $name — the suite run ended without one" ;;
     esac
   done
@@ -829,10 +865,24 @@ cmd_falsify() {
 
   ((${#ran[@]} > 0)) || die "falsify: no defect matched the filter '$filter'"
 
+  # Three kinds of not-caught, three different problems, three exit codes. A survivor is
+  # the suite's problem. A stale or unusable entry is the list's: it no longer describes
+  # the code, or it breaks the build rather than the behaviour, and a report that folded
+  # those into the survivors blamed the tests for a list nobody had maintained.
   echo
+  printf '%d caught, %d SURVIVED, %d stale, %d unusable, of %d defect(s)\n' \
+    "${#caught[@]}" "${#survived[@]}" "${#stale[@]}" "${#unusable[@]}" "${#ran[@]}"
   if ((${#survived[@]} > 0)); then
-    printf '%d of %d defect(s) were not caught by the suite.\n' "${#survived[@]}" "${#ran[@]}" >&2
-    return 1
+    printf 'the suite did not notice %d of them — read the SURVIVED lines: each names what nobody checks\n' "${#survived[@]}" >&2
+    return 83
+  fi
+  if ((${#stale[@]} > 0)); then
+    printf 'the defect list has drifted from the code: %d find text(s) no longer match once\n' "${#stale[@]}" >&2
+    return 87
+  fi
+  if ((${#unusable[@]} > 0)); then
+    printf '%d edit(s) only stopped the build — neuter the guard instead, so the tests are asked\n' "${#unusable[@]}" >&2
+    return 88
   fi
   printf 'all %d defect(s) were caught by the suite.\n' "${#ran[@]}"
 }
