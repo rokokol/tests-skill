@@ -735,226 +735,131 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   nested "$work/pristine" ||
     fail "an untouched copy does not pass the gate — every 'able to fail' proof below would be meaningless"
 
-  echo "== the frontmatter check is able to fail"
-  copy "$work/nofront"
-  printf 'no frontmatter here\n' >"$work/nofront/SKILL.md"
-  catches "$work/nofront" "does not open with a frontmatter block" "a SKILL.md with no frontmatter"
+  # One planted defect per line. FRAGMENT is the text the copy's own failure must carry,
+  # and the mutator says how the defect is planted:
+  #   append FILE TEXT          add TEXT to the end of FILE
+  #   write  FILE TEXT          replace FILE with TEXT
+  #   sed    FILE SCRIPT MARK   run SCRIPT over FILE; MARK must be in the result
+  #   awk    FILE PROGRAM MARK  the same, with awk
+  #   drop   FILE TEXT          delete every line holding TEXT; none may remain
+  # A mutation that did not land is a failure of its own, never a silent pass: a sed whose
+  # pattern drifted from t.sh would otherwise leave a pristine copy, and the pristine copy
+  # passes, which reads exactly like a defect that was caught.
+  planted=0
+  plant() { # plant NAME FRAGMENT DESCRIPTION MUTATOR FILE ARGS...
+    local name="$1" want="$2" what="$3" how="$4" file="$5"
+    shift 5
+    local dir="$work/plant-$name"
+    echo "== able to fail: $what"
+    copy "$dir"
+    case "$how" in
+      append) printf '%s' "$1" >>"$dir/$file" ;;
+      write) printf '%s' "$1" >"$dir/$file" ;;
+      sed)
+        sed "$1" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
+        grep -qF -- "$2" "$dir/$file" || fail "$what: the defect was not planted — '$2' is not in $file"
+        ;;
+      awk)
+        awk "$1" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
+        grep -qF -- "$2" "$dir/$file" || fail "$what: the defect was not planted — '$2' is not in $file"
+        ;;
+      drop)
+        grep -vF -- "$1" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
+        ! grep -qF -- "$1" "$dir/$file" || fail "$what: the defect was not planted — '$1' is still in $file"
+        ;;
+      *) fail "plant: no such mutator '$how'" ;;
+    esac
+    [[ ! -x "$file" ]] || chmod +x "$dir/$file"
+    catches "$dir" "$want" "$what"
+    planted=$((planted + 1))
+  }
 
-  echo "== the hard-wrap check is able to fail"
-  copy "$work/wrapped"
-  printf '\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n' \
-    >>"$work/wrapped/README.md"
-  catches "$work/wrapped" "hard-wraps a paragraph" "a hard-wrapped paragraph"
+  # shellcheck disable=SC2016  # every $ below is t.sh's own source text being matched, not an expansion
+  {
+    plant nofront "does not open with a frontmatter block" "a SKILL.md with no frontmatter" \
+      write SKILL.md $'no frontmatter here\n'
+    plant wrapped "hard-wraps a paragraph" "a hard-wrapped paragraph" \
+      append README.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
+    plant orphan "nothing links to it" "a reference nothing links to" \
+      write references/nothing-points-here.md ''
+    plant deadlink "which does not exist" "a link to a missing file" \
+      append SKILL.md $'\nSee [the missing one](references/not-a-file.md).\n'
+    plant deadanchor "where no heading has that anchor" "a link to a nonexistent heading" \
+      append SKILL.md $'\nSee [nowhere](references/verdict.md#no-such-heading).\n'
+    plant crlf "reddened a healthy CRLF run" "a run that keeps the carriage return in its markers" \
+      drop t.sh "line=\"\${line%\$'\\r'}\""
+    plant badflag "which that subcommand does not accept" "a documented flag the parser does not have" \
+      append references/verdict.md $'\n```sh\nt.sh run -b \'cargo build\' -- cargo test\n```\n'
+    plant dead "a dead entry guards nothing" "a marker matching nothing" \
+      append markers/default.txt $'a marker matching nothing\n'
+    plant noisy "it would redden healthy runs" "a marker that fires on a healthy run" \
+      append markers/default.txt $'test session starts\n'
+    plant unproven "has no fixture at" "a marker set with no fixture" \
+      write markers/invented.txt $'no tests ran\n'
+    # An ignored key is a policy silently not in effect, which is worse than no config at
+    # all: the repository believes markers are loaded that never were
+    plant lenient "unknown key" "a config that ignores an unknown key" \
+      sed t.sh 's|^      \*) die "config: \$conf:\$n — unknown key.*|      *) : ;;|' '*) : ;;'
+    # `die` in a $(...) exits the subshell, so the caller carries on with an empty string.
+    # Written that way, the empty-marker-set refusal would not refuse — and an empty marker
+    # list makes every run a pass while the check still looks like it is working.
+    plant subshell "accepted an empty marker set" "a run that never validated its markers" \
+      sed t.sh 's/^  load_markers$/  MARKER_PATTERNS=()/' 'MARKER_PATTERNS=()'
+    # A harness with no pipefail that reads $? after the pipe. Both halves are one defect:
+    # under pipefail alone, $? still happens to be right whenever the FIRST command is the
+    # one that failed, so planting only the $? would prove nothing.
+    plant blind "for a command that exited 7" "a run reading tee's status" \
+      sed t.sh 's/^set -uo pipefail$/set -u/; s/local -a ps=("${PIPESTATUS\[@\]}")/local -a ps=($?)/' 'local -a ps=($?)'
+    plant undocumented "its help never mentions it" "a subcommand missing from the help" \
+      awk t.sh '/^  flaky\) cmd_flaky/ && !done { print "  wat) cmd_run \"$@\" ;;"; done=1 } { print }' 'wat) cmd_run'
+    plant raw "should be 1 to git bisect" "a probe returning a raw signal status" \
+      sed t.sh 's/^        \*) return 1 ;;$/        *) return "$status" ;; # planted/' '# planted'
+    # Dropping the `printf x` lets command substitution eat the file's last newline, so
+    # every restore leaves the tree dirty by one byte — invisible to a string comparison,
+    # obvious to git
+    plant trailing "byte for byte" "a falsify that loses the trailing newline" \
+      sed t.sh 's/__content=\$(cat "\$2" \&\& printf x)/__content=$(cat "$2")/' '__content=$(cat "$2")'
+    plant badallow "grep cannot compile" "a run that applies an allow regex it never checked" \
+      drop t.sh '((rc != 2)) || die "allow:'
+    plant carryon "carried on after an interrupt" "a falsify whose interrupt handler returns" \
+      sed t.sh "s/^  trap 'restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'restore_all' INT/" "trap 'restore_all' INT"
+    plant surrender "want 89" "a bisect that reports an all-skipped history as resolved" \
+      sed t.sh 's/^    return 89$/    return 0 # planted/' '# planted'
+    plant muted "hid run's refusal" "a flaky that mutes the harness's own refusals" \
+      sed t.sh 's|>/dev/null 2>"\$stamp/run-\$i.err"|>/dev/null 2>/dev/null|' '>/dev/null 2>/dev/null'
+    plant anytail "accepted -t abc" "a run that takes -t on trust" \
+      drop t.sh 'die "run: -t needs a number'
+    plant twice "named twice printed" "a run that loads a marker set as often as it is named" \
+      sed t.sh 's/^        add_marker_file "\$RESOLVED"$/        MARKER_FILES+=("$RESOLVED")/' 'MARKER_FILES+=("$RESOLVED")'
+    plant unresolved "through the symlink" "a harness that does not resolve its own symlink" \
+      sed t.sh 's/^while \[\[ -L "\$self" \]\]; do$/while false; do/' 'while false; do'
+    # The write goes to /dev/null rather than being deleted: deleting it leaves RUN_VERDICT
+    # unreferenced, and the copy would then fail on shellcheck instead of on the check
+    plant nosidecar "did not record" "a run that keeps its verdict to itself" \
+      sed t.sh 's|>"\$log\.verdict"|>/dev/null|' 'printf '"'"'%s\n'"'"' "$RUN_VERDICT" >/dev/null'
+    plant nolog "nowhere to put its log" "a run that cannot write its log" \
+      drop t.sh ': >"$log" || fatal'
+    if [[ $EUID -eq 0 ]]; then
+      echo "   skipped: the unwritten-mutant check itself is skipped as root"
+    else
+      plant unwritten "could not write" "a falsify that does not check its write" \
+        sed t.sh 's/ || fatal "falsify: cannot write \$file.*$/ # planted/' '# planted'
+    fi
+  }
 
-  echo "== the reachability check is able to fail: a reference nothing links to"
-  copy "$work/orphan"
-  : >"$work/orphan/references/nothing-points-here.md"
-  catches "$work/orphan" "nothing links to it" "a reference nothing links to"
+  # Two mutations, so a hand-written block: the duplicate has to be present in the set's
+  # own fixture too, or the copy fails on the dead-entry rule first and the duplicate rule
+  # is never reached — which is exactly how this proof was passing without proving anything
+  echo "== able to fail: a set repeating a default marker"
+  copy "$work/plant-dupe"
+  printf 'no tests ran\n' >>"$work/plant-dupe/markers/go.txt"
+  printf 'no tests ran in 0.01s\n' >>"$work/plant-dupe/tests/fixtures/lying/go.log"
+  catches "$work/plant-dupe" "repeats markers that markers/default.txt" "a set repeating a default marker"
+  planted=$((planted + 1))
 
-  echo "== the link check is able to fail: a link to a file that is not there"
-  copy "$work/deadlink"
-  printf '\nSee [the missing one](references/not-a-file.md).\n' >>"$work/deadlink/SKILL.md"
-  catches "$work/deadlink" "which does not exist" "a link to a missing file"
-
-  echo "== the anchor check is able to fail: a link to a heading that does not exist"
-  copy "$work/deadanchor"
-  printf '\nSee [nowhere](references/verdict.md#no-such-heading).\n' >>"$work/deadanchor/SKILL.md"
-  catches "$work/deadanchor" "where no heading has that anchor" "a link to a nonexistent heading"
-
-  echo "== the CRLF guard is able to fail"
-  copy "$work/crlf"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed "s|^    line=\"\${line%\$'\\\\r'}\"$||" t.sh >"$work/crlf/t.sh.new" &&
-    mv "$work/crlf/t.sh.new" "$work/crlf/t.sh"
-  chmod +x "$work/crlf/t.sh"
-  catches "$work/crlf" "reddened a healthy CRLF run" "a run that keeps the carriage return in its markers"
-
-  echo "== the documented-flag check is able to fail: the mistake a reader actually hit"
-  copy "$work/badflag"
-  printf '\n```sh\nt.sh run -b '"'"'cargo build'"'"' -- cargo test\n```\n' \
-    >>"$work/badflag/references/verdict.md"
-  catches "$work/badflag" "which that subcommand does not accept" "a documented flag the parser does not have"
-
-  echo "== the marker check is able to fail: a dead entry"
-  copy "$work/dead"
-  printf 'a marker matching nothing\n' >>"$work/dead/markers/default.txt"
-  catches "$work/dead" "a dead entry guards nothing" "a marker matching nothing"
-
-  echo "== the marker check is able to fail: an entry that fires on a healthy run"
-  copy "$work/noisy"
-  printf 'test session starts\n' >>"$work/noisy/markers/default.txt"
-  catches "$work/noisy" "it would redden healthy runs" "a marker that fires on a healthy run"
-
-  echo "== the duplicate check is able to fail: a set repeating a default marker"
-  # The duplicate has to be present in the set's own fixture too, or the copy fails on the
-  # dead-entry rule first and the duplicate rule is never reached — which is exactly how
-  # this proof was passing without proving anything
-  copy "$work/dupe"
-  printf 'no tests ran\n' >>"$work/dupe/markers/go.txt"
-  printf 'no tests ran in 0.01s\n' >>"$work/dupe/tests/fixtures/lying/go.log"
-  catches "$work/dupe" "repeats markers that markers/default.txt" "a set repeating a default marker"
-
-  echo "== the marker check is able to fail: a set with no fixture behind it"
-  copy "$work/unproven"
-  printf 'no tests ran\n' >"$work/unproven/markers/invented.txt"
-  catches "$work/unproven" "has no fixture at" "a marker set with no fixture"
-
-  echo "== the unknown-key refusal is able to fail: a config that ignores what it cannot parse"
-  # The tempting form. An ignored key is a policy silently not in effect, which is worse
-  # than no config at all: the repository believes markers are loaded that never were.
-  copy "$work/lenient"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed 's|^      \*) die "config: \$conf:\$n — unknown key.*|      *) : ;;|' t.sh >"$work/lenient/t.sh.new" &&
-    mv "$work/lenient/t.sh.new" "$work/lenient/t.sh"
-  chmod +x "$work/lenient/t.sh"
-  grep -qF '*) : ;;' "$work/lenient/t.sh" || fail "the lenient-config fixture was not planted"
-  catches "$work/lenient" "unknown key" "a config that ignores an unknown key"
-
-  echo "== a refusal written inside a subshell is able to fail"
-  # `die` in a $(...) exits the subshell, so the caller carries on with an empty string.
-  # Written that way, the empty-marker-set refusal would not refuse — and an empty marker
-  # list makes every run a pass while the check still looks like it is working.
-  copy "$work/subshell"
-  sed 's/^  load_markers$/  MARKER_PATTERNS=()/' t.sh >"$work/subshell/t.sh.new" &&
-    mv "$work/subshell/t.sh.new" "$work/subshell/t.sh"
-  chmod +x "$work/subshell/t.sh"
-  grep -qF 'MARKER_PATTERNS=()' "$work/subshell/t.sh" || fail "the unvalidated-markers fixture was not planted"
-  catches "$work/subshell" "accepted an empty marker set" "a run that never validated its markers"
-
-  echo "== the status check is able to fail: run reading the pipeline instead of the command"
-  # The regression as it actually occurs: a harness with no pipefail that reads $? after
-  # the pipe. Both halves are one defect — under pipefail alone, $? still happens to be
-  # right whenever the *first* command is the one that failed, so planting only the $?
-  # would prove nothing.
-  copy "$work/blind"
-  # shellcheck disable=SC2016  # the $? is the defect being planted, not an expansion
-  sed -e 's/^set -uo pipefail$/set -u/' -e 's/local -a ps=("${PIPESTATUS\[@\]}")/local -a ps=($?)/' \
-    t.sh >"$work/blind/t.sh.new" && mv "$work/blind/t.sh.new" "$work/blind/t.sh"
-  chmod +x "$work/blind/t.sh"
-  grep -qF 'local -a ps=($?)' "$work/blind/t.sh" || fail "the blind-status fixture was not planted"
-  catches "$work/blind" "for a command that exited 7" "a run reading tee's status"
-
-  echo "== the help-drift check is able to fail: a subcommand the help never mentions"
-  copy "$work/undocumented"
-  awk '/^  flaky\) cmd_flaky/ && !done { print "  wat) cmd_run \"$@\" ;;"; done=1 } { print }' \
-    t.sh >"$work/undocumented/t.sh.new" && mv "$work/undocumented/t.sh.new" "$work/undocumented/t.sh"
-  chmod +x "$work/undocumented/t.sh"
-  grep -qF 'wat) cmd_run' "$work/undocumented/t.sh" || fail "the undocumented-subcommand fixture was not planted"
-  catches "$work/undocumented" "its help never mentions it" "a subcommand missing from the help"
-
-  echo "== the bisect status mapping is able to fail: statuses passed through raw"
-  copy "$work/raw"
-  # shellcheck disable=SC2016  # the $status is the defect being planted, not an expansion
-  sed 's/^        \*) return 1 ;;$/        *) return "$status" ;; # planted/' t.sh >"$work/raw/t.sh.new" &&
-    mv "$work/raw/t.sh.new" "$work/raw/t.sh"
-  chmod +x "$work/raw/t.sh"
-  grep -qF '# planted' "$work/raw/t.sh" || fail "the raw-status fixture was not planted"
-  catches "$work/raw" "should be 1 to git bisect" "a probe returning a raw signal status"
-
-  echo "== the restore check is able to fail: a slurp that loses the trailing newline"
-  # The regression this exact guard was written for. Dropping the `printf x` lets command
-  # substitution eat the file's last newline, so every restore leaves the tree dirty by one
-  # byte — invisible to a string comparison, obvious to git.
-  copy "$work/trailing"
-  # shellcheck disable=SC2016  # both sides are t.sh's own source text, not expansions
-  sed 's/__content=\$(cat "\$2" \&\& printf x)/__content=$(cat "$2")/' t.sh >"$work/trailing/t.sh.new" &&
-    mv "$work/trailing/t.sh.new" "$work/trailing/t.sh"
-  chmod +x "$work/trailing/t.sh"
-  # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
-  grep -qF '__content=$(cat "$2")' "$work/trailing/t.sh" || fail "the trailing-newline fixture was not planted"
-  catches "$work/trailing" "byte for byte" "a falsify that loses the trailing newline"
-
-  echo "== the allow-regex refusal is able to fail: the check that runs before the command"
-  copy "$work/badallow"
-  sed '/^    ((rc != 2)) || die "allow:/d' t.sh >"$work/badallow/t.sh.new" && mv "$work/badallow/t.sh.new" "$work/badallow/t.sh"
-  chmod +x "$work/badallow/t.sh"
-  ! grep -qF 'die "allow:' "$work/badallow/t.sh" || fail "the unvalidated-allow fixture was not planted"
-  catches "$work/badallow" "grep cannot compile" "a run that applies an allow regex it never checked"
-
-  echo "== the interrupt check is able to fail: a trap that restores and carries on"
-  copy "$work/carryon"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed "s/^  trap 'restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'restore_all' INT/" t.sh >"$work/carryon/t.sh.new" &&
-    mv "$work/carryon/t.sh.new" "$work/carryon/t.sh"
-  chmod +x "$work/carryon/t.sh"
-  grep -qF "trap 'restore_all' INT" "$work/carryon/t.sh" || fail "the carry-on fixture was not planted"
-  catches "$work/carryon" "carried on after an interrupt" "a falsify whose interrupt handler returns"
-
-  echo "== the unwritten-mutant check is able to fail: a write taken on trust"
-  copy "$work/unwritten"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed 's/ || fatal "falsify: cannot write \$file.*$//' t.sh >"$work/unwritten/t.sh.new" && mv "$work/unwritten/t.sh.new" "$work/unwritten/t.sh"
-  chmod +x "$work/unwritten/t.sh"
-  ! grep -qF 'falsify: cannot write' "$work/unwritten/t.sh" || fail "the unwritten-mutant fixture was not planted"
-  if [[ $EUID -eq 0 ]]; then
-    echo "   skipped: running as root, where the check itself is skipped"
-  else
-    catches "$work/unwritten" "could not write" "a falsify that does not check its write"
-  fi
-
-  echo "== the inconclusive-bisect check is able to fail: git's surrender read as success"
-  copy "$work/surrender"
-  sed 's/^    return 89$/    return 0/' t.sh >"$work/surrender/t.sh.new" && mv "$work/surrender/t.sh.new" "$work/surrender/t.sh"
-  chmod +x "$work/surrender/t.sh"
-  ! grep -qF 'return 89' "$work/surrender/t.sh" || fail "the surrender fixture was not planted"
-  catches "$work/surrender" "want 89" "a bisect that reports an all-skipped history as resolved"
-
-  echo "== the heard-refusal check is able to fail: flaky muting run's stderr with the command's"
-  copy "$work/muted"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed 's|>/dev/null 2>"\$stamp/run-\$i.err"|>/dev/null 2>/dev/null|' t.sh >"$work/muted/t.sh.new" &&
-    mv "$work/muted/t.sh.new" "$work/muted/t.sh"
-  chmod +x "$work/muted/t.sh"
-  grep -qF '>/dev/null 2>/dev/null' "$work/muted/t.sh" || fail "the muted-refusal fixture was not planted"
-  catches "$work/muted" "hid run's refusal" "a flaky that mutes the harness's own refusals"
-
-  echo "== the -t check is able to fail: a tail length taken on trust"
-  copy "$work/anytail"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed '/^        \[\[ "\$tail_n" =~ \^\[0-9\]+\$ \]\] || die "run: -t needs a number/d' t.sh >"$work/anytail/t.sh.new" &&
-    mv "$work/anytail/t.sh.new" "$work/anytail/t.sh"
-  chmod +x "$work/anytail/t.sh"
-  ! grep -qF 'die "run: -t needs a number' "$work/anytail/t.sh" || fail "the unvalidated-tail fixture was not planted"
-  catches "$work/anytail" "accepted -t abc" "a run that takes -t on trust"
-
-  echo "== the duplicate-set check is able to fail: a set named twice, loaded twice"
-  copy "$work/twice"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed 's/^        add_marker_file "\$RESOLVED"$/        MARKER_FILES+=("$RESOLVED")/' t.sh >"$work/twice/t.sh.new" &&
-    mv "$work/twice/t.sh.new" "$work/twice/t.sh"
-  chmod +x "$work/twice/t.sh"
-  # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
-  grep -qF '        MARKER_FILES+=("$RESOLVED")' "$work/twice/t.sh" || fail "the loaded-twice fixture was not planted"
-  catches "$work/twice" "named twice printed" "a run that loads a marker set as often as it is named"
-
-  echo "== the symlink check is able to fail: a harness that reads dirname of the link"
-  copy "$work/unresolved"
-  # shellcheck disable=SC2016  # t.sh's own source text is being matched, not expanded
-  sed 's/^while \[\[ -L "\$self" \]\]; do$/while false; do/' t.sh >"$work/unresolved/t.sh.new" &&
-    mv "$work/unresolved/t.sh.new" "$work/unresolved/t.sh"
-  chmod +x "$work/unresolved/t.sh"
-  grep -qF 'while false; do' "$work/unresolved/t.sh" || fail "the unresolved-symlink fixture was not planted"
-  catches "$work/unresolved" "through the symlink" "a harness that does not resolve its own symlink"
-
-  echo "== the verdict sidecar check is able to fail"
-  copy "$work/nosidecar"
-  # The write goes to /dev/null rather than being deleted: deleting it leaves RUN_VERDICT
-  # unreferenced, and the copy would then fail on shellcheck instead of on the check
-  # shellcheck disable=SC2016  # $log is t.sh's own source text being matched, not an expansion
-  sed 's|>"\$log\.verdict"|>/dev/null|' t.sh >"$work/nosidecar/t.sh.new" && mv "$work/nosidecar/t.sh.new" "$work/nosidecar/t.sh"
-  chmod +x "$work/nosidecar/t.sh"
-  # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
-  ! grep -qF '>"$log.verdict"' "$work/nosidecar/t.sh" || fail "the missing-sidecar fixture was not planted"
-  catches "$work/nosidecar" "did not record" "a run that keeps its verdict to itself"
-
-  echo "== the log-is-writable guard is able to fail"
-  copy "$work/nolog"
-  # shellcheck disable=SC2016  # $log is t.sh's own source text being matched, not an expansion
-  guard=': >"$log" || fatal'
-  grep -vF "$guard" t.sh >"$work/nolog/t.sh.new" && mv "$work/nolog/t.sh.new" "$work/nolog/t.sh"
-  chmod +x "$work/nolog/t.sh"
-  ! grep -qF "$guard" "$work/nolog/t.sh" || fail "the missing-guard fixture was not planted"
-  catches "$work/nolog" "nowhere to put its log" "a run that cannot write its log"
+  # The table above is the proof; a table that lost its rows would prove nothing while
+  # the gate stayed green
+  ((planted >= 27)) || fail "only $planted defects were planted — the falsification table has lost rows"
 fi
 
 echo
