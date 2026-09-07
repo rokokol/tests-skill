@@ -311,6 +311,19 @@ status=0
 ./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo "47 passed in 1.83s"; exit 0' >/dev/null 2>&1 || status=$?
 ((status == 0)) || fail "run reported $status for a healthy run — it would cry wolf"
 
+echo "== run writes the kind of verdict it reached beside the log"
+# A number cannot say whether 79 was the harness's verdict or the command's own status,
+# so the kind goes in a sidecar, and the subcommands that run cmd_run in a subshell
+# read that instead of guessing from the number
+for pair in 'fail:exit 7' 'lied:echo "collected 0 items"; exit 0' 'pass:echo "47 passed"; exit 0'; do
+  want=${pair%%:*}
+  cmd=${pair#*:}
+  rm -f "$work/verdict.log" "$work/verdict.log.verdict"
+  T_LOGFILE="$work/verdict.log" ./t.sh run -t 0 -l "$work/logs" -- sh -c "$cmd" >/dev/null 2>&1 || :
+  grep -qx "$want" "$work/verdict.log.verdict" 2>/dev/null ||
+    fail "run did not record '$want' beside its log for: $cmd"
+done
+
 echo "== T_ALLOW excuses a marker the repository expects, and nothing else"
 status=0
 T_ALLOW='expected: no tests ran' ./t.sh run -t 0 -l "$work/logs" \
@@ -699,6 +712,17 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
   grep -qF '__content=$(cat "$2")' "$work/trailing/t.sh" || fail "the trailing-newline fixture was not planted"
   catches "$work/trailing" "byte for byte" "a falsify that loses the trailing newline"
+
+  echo "== the verdict sidecar check is able to fail"
+  copy "$work/nosidecar"
+  # The write goes to /dev/null rather than being deleted: deleting it leaves RUN_VERDICT
+  # unreferenced, and the copy would then fail on shellcheck instead of on the check
+  # shellcheck disable=SC2016  # $log is t.sh's own source text being matched, not an expansion
+  sed 's|>"\$log\.verdict"|>/dev/null|' t.sh >"$work/nosidecar/t.sh.new" && mv "$work/nosidecar/t.sh.new" "$work/nosidecar/t.sh"
+  chmod +x "$work/nosidecar/t.sh"
+  # shellcheck disable=SC2016  # t.sh's own source text, not an expansion
+  ! grep -qF '>"$log.verdict"' "$work/nosidecar/t.sh" || fail "the missing-sidecar fixture was not planted"
+  catches "$work/nosidecar" "did not record" "a run that keeps its verdict to itself"
 
   echo "== the log-is-writable guard is able to fail"
   copy "$work/nolog"

@@ -6,7 +6,8 @@
 #                             output is kept in a log file, and the log is read even when
 #                             CMD exited 0 — because that is not always a success.
 #                             -m adds a marker set from markers/ (a name) or a file path;
-#                             markers/default.txt always applies
+#                             markers/default.txt always applies. The kind of verdict —
+#                             pass, fail or lied — is written beside the log as LOG.verdict
 #   t.sh flaky N [-l DIR] [-p PATTERN] -- CMD...
 #                             run CMD N times and report how many runs disagreed with the
 #                             first. Evidence that a test is unstable, never a way to
@@ -154,6 +155,9 @@ load_config() {
     "$conf" "$sets" "$pats" "$([[ -n "$POLICY_ALLOW" ]] && printf ', 1 allow')" >&2
 }
 
+# What the last cmd_run in this shell concluded: pass, fail or lied. Empty until it ran.
+RUN_VERDICT=""
+
 # Fills MARKER_PATTERNS from MARKER_FILES. Called from the shell that can actually exit.
 MARKER_PATTERNS=()
 load_markers() {
@@ -265,6 +269,15 @@ cmd_run() {
   if ((status == 0)) && [[ -n "$hits" ]]; then
     verdict=79
   fi
+
+  # The KIND of verdict, out of band. A number cannot carry it: CMD's own 79 or 64 would
+  # read as the harness's, and make's 2 once read as "the harness could not run it". So
+  # the kind is set here for a caller in this shell, and written beside the log for a
+  # caller that had to run this in a subshell — flaky, bisect-probe and falsify all do.
+  RUN_VERDICT=fail
+  ((verdict != 0)) || RUN_VERDICT=pass
+  ((verdict != 79)) || RUN_VERDICT=lied
+  printf '%s\n' "$RUN_VERDICT" >"$log.verdict"
 
   # The verdict is decided above, before a single line of the log is shown. Whatever is
   # printed from here on is for a reader, and can no longer become the answer.
