@@ -5,6 +5,12 @@ than numbered, and with no `Unreleased` section — a skill is read at whatever 
 have checked out, so whatever is on the default branch is what everyone already has, and a
 section for work that has landed but not shipped would never close
 
+## 2026-09-07
+
+### Changed
+
+- **the harness's own exit codes moved out of the range test runners use.** `run` reported a lying log as 3, `flaky` reported disagreement as 4, and every usage or harness error was 2. GNU make exits 2 on any error, pytest uses 2 to 5, `mix test` fails with 2, and cargo-nextest exits 4 for "no tests ran", so a probe that skipped on 2 skipped every commit where `make test` failed, and a `flaky` verdict was indistinguishable from nextest's own empty run. The verdicts now sit in a band nothing else claims: 64 for a usage error, 70 for a failure of the harness itself, 79 for a run that exited 0 while its log said otherwise, 86 for runs that disagreed. Anything checking the old numbers must be updated
+
 ## 2026-09-05
 
 ### Fixed

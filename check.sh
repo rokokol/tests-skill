@@ -222,11 +222,11 @@ done
 echo "== run refuses a marker set that would leave it checking nothing"
 status=0
 ./t.sh run -t 0 -l "$work/logs" -m no-such-set -- true >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "run accepted a marker set that does not exist (got $status)"
+((status == 64)) || fail "run accepted a marker set that does not exist (got $status)"
 : >"$work/empty-markers.txt"
 status=0
 ./t.sh run -t 0 -l "$work/logs" -m "$work/empty-markers.txt" -- true >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "run accepted an empty marker set, which reads as a working check (got $status)"
+((status == 64)) || fail "run accepted an empty marker set, which reads as a working check (got $status)"
 
 echo "== a repository's own policy applies, and a broken one stops the run"
 # The config carries policy and never the command, so what runs stays visible in the line
@@ -243,9 +243,9 @@ in_conf() { # in_conf EXPECTED DESCRIPTION -- CMD...
   ((got == expected)) || fail "$what: expected $expected, got $got"
 }
 policy 'markers rust'
-in_conf 3 "a marker set named in the config applies" -- sh -c 'echo "running 0 tests"; exit 0'
+in_conf 79 "a marker set named in the config applies" -- sh -c 'echo "running 0 tests"; exit 0'
 policy 'pattern thread panicked in setup'
-in_conf 3 "a pattern named in the config applies" -- sh -c 'echo "thread panicked in setup"; exit 0'
+in_conf 79 "a pattern named in the config applies" -- sh -c 'echo "thread panicked in setup"; exit 0'
 policy 'allow expected: no tests ran'
 in_conf 0 "a line the config excuses is excused" -- sh -c 'echo "expected: no tests ran"; exit 0'
 # flaky obeys the same policy: a repository that named its log directory once should not
@@ -256,11 +256,11 @@ rm -rf "$conf/.from-config"
 [[ -d "$conf/.from-config" ]] || fail "flaky ignored the log directory the config names"
 rm -rf "$conf/.from-config"
 policy 'command cargo test'
-in_conf 2 "an unknown key refuses rather than reading as no policy" -- true
+in_conf 64 "an unknown key refuses rather than reading as no policy" -- true
 policy 'markers'
-in_conf 2 "a key with no value refuses" -- true
+in_conf 64 "a key with no value refuses" -- true
 policy 'markers nosuchset'
-in_conf 2 "a marker set the config names but does not exist refuses" -- true
+in_conf 64 "a marker set the config names but does not exist refuses" -- true
 rm -f "$conf/tests/t.conf"
 in_conf 0 "a repository with no config is the normal case" -- sh -c 'echo "47 passed"; exit 0'
 # The template is the thing people copy, so it has to parse — an example config that the
@@ -285,7 +285,7 @@ status=0
 status=0
 ./t.sh run -t 0 -l "$work/logs" -m "$crlf_markers" \
   -- sh -c 'printf "collected 0 items\r\n"; exit 0' >/dev/null 2>&1 || status=$?
-((status == 3)) || fail "a CRLF marker file stopped catching what it names (got $status)"
+((status == 79)) || fail "a CRLF marker file stopped catching what it names (got $status)"
 
 echo "== run reports the command's own status, where a pipe would report zero"
 # The whole reason this harness exists: `cmd | tail` exits 0 for a suite that just failed
@@ -304,7 +304,7 @@ premise=0
 echo "== a run that exits 0 while its log says otherwise is not a pass"
 status=0
 ./t.sh run -t 0 -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0' >/dev/null 2>&1 || status=$?
-((status == 3)) || fail "run reported $status for a green run whose log said no tests were collected"
+((status == 79)) || fail "run reported $status for a green run whose log said no tests were collected"
 
 echo "== an honest green run is still a pass"
 status=0
@@ -319,7 +319,7 @@ T_ALLOW='expected: no tests ran' ./t.sh run -t 0 -l "$work/logs" \
 status=0
 T_ALLOW='something else entirely' ./t.sh run -t 0 -l "$work/logs" \
   -- sh -c 'echo "expected: no tests ran"; exit 0' >/dev/null 2>&1 || status=$?
-((status == 3)) || fail "T_ALLOW excused a line it does not name (got $status) — it excuses everything"
+((status == 79)) || fail "T_ALLOW excused a line it does not name (got $status) — it excuses everything"
 
 echo "== run refuses to start when its log cannot be written"
 # A lost log silently cancels half of what this harness is for, so it is a refusal up
@@ -332,13 +332,13 @@ else
   chmod a-w "$readonly_dir"
   status=0
   ./t.sh run -t 0 -l "$readonly_dir" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
-  ((status == 2)) || fail "run started with nowhere to put its log (got $status)"
+  ((status == 70)) || fail "run started with nowhere to put its log (got $status)"
 fi
 
 echo "== run refuses a command that was not put after --"
 status=0
 ./t.sh run sh -c 'exit 0' >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "run accepted a command without -- (got $status); guessing is how the wrong thing gets run"
+((status == 64)) || fail "run accepted a command without -- (got $status); guessing is how the wrong thing gets run"
 
 echo "== flaky calls a command that always agrees with itself stable"
 status=0
@@ -357,15 +357,15 @@ status=0
 ./t.sh flaky 3 -l "$work/logs" -- \
   sh -c 'n=$(cat "$0" 2>/dev/null || echo 0); echo $((n + 1)) >"$0"; test "$n" -eq 0' "$counter" \
   >/dev/null 2>&1 || status=$?
-((status == 4)) || fail "flaky missed a command whose runs disagreed (got $status)"
+((status == 86)) || fail "flaky missed a command whose runs disagreed (got $status)"
 
 echo "== flaky refuses the arguments that would make it meaningless"
 status=0
 ./t.sh flaky 1 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "flaky accepted a single run, which cannot show disagreement (got $status)"
+((status == 64)) || fail "flaky accepted a single run, which cannot show disagreement (got $status)"
 status=0
 ./t.sh flaky 3 -l "$work/logs" sh -c 'exit 0' >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "flaky accepted a command that was not put after -- (got $status)"
+((status == 64)) || fail "flaky accepted a command that was not put after -- (got $status)"
 
 echo "== bisect names the commit that broke it, across a history holding an unbuildable one"
 # A throwaway history where the answer is known in advance. The commit in the middle that
@@ -428,10 +428,14 @@ probe 125 "runs nothing while exiting 0" -- sh -c 'echo "collected 0 items"; exi
 probe 1 "is killed by a signal" -- sh -c 'kill -SEGV $$'
 
 echo "== bisect refuses to start on a working tree it would trample"
-echo dirty >"$repo/passes"
+# A TRACKED file has to change: `passes` is deleted at HEAD, so writing it would only add
+# an untracked file, which `git diff --quiet` does not see. Written that way, this check
+# held for a year on git's own refusal to check out over the untracked file, and t.sh's
+# dirty-tree refusal was never exercised at all.
+echo dirty >>"$repo/note"
 status=0
 (cd "$repo" && "$HERE/t.sh" bisect "$first_good" -- true) >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "bisect started with uncommitted changes in the tree (got $status)"
+((status == 64)) || fail "bisect started with uncommitted changes in the tree (got $status)"
 git -C "$repo" checkout -q -- . 2>/dev/null || :
 
 echo "== falsify separates what the suite caught from what it never saw"
@@ -497,20 +501,20 @@ git -C "$fal" diff --quiet || fail "falsify left the working tree dirty"
 echo "== falsify refuses the situations where its answer would be meaningless"
 status=0
 (cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh -c 'exit 1') >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "falsify measured against an already-failing suite (got $status)"
+((status == 64)) || fail "falsify measured against an already-failing suite (got $status)"
 status=0
 (cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh -c 'echo "collected 0 items"; exit 0') \
   >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "falsify measured against a suite that never really ran (got $status)"
+((status == 64)) || fail "falsify measured against a suite that never really ran (got $status)"
 echo dirt >"$fal/impl.sh.tmp" && mv "$fal/impl.sh.tmp" "$fal/impl.sh"
 status=0
 (cd "$fal" && "$HERE/t.sh" falsify -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "falsify started on a dirty tree, where an interrupted restore looks like your own edits (got $status)"
+((status == 64)) || fail "falsify started on a dirty tree, where an interrupted restore looks like your own edits (got $status)"
 git -C "$fal" checkout -q -- .
 status=0
 : >"$fal/tests/empty.sh"
 (cd "$fal" && "$HERE/t.sh" falsify -d tests/empty.sh -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
-((status == 2)) || fail "falsify accepted an empty defect list, which proves nothing (got $status)"
+((status == 64)) || fail "falsify accepted an empty defect list, which proves nothing (got $status)"
 
 echo "== the help text lists every subcommand the dispatcher accepts"
 # The usage text is read out of this file's own header by line range, so it drifts the
@@ -699,7 +703,7 @@ if [[ -z "${T_CHECK_NESTED:-}" ]]; then
   echo "== the log-is-writable guard is able to fail"
   copy "$work/nolog"
   # shellcheck disable=SC2016  # $log is t.sh's own source text being matched, not an expansion
-  guard=': >"$log" || die'
+  guard=': >"$log" || fatal'
   grep -vF "$guard" t.sh >"$work/nolog/t.sh.new" && mv "$work/nolog/t.sh.new" "$work/nolog/t.sh"
   chmod +x "$work/nolog/t.sh"
   ! grep -qF "$guard" "$work/nolog/t.sh" || fail "the missing-guard fixture was not planted"

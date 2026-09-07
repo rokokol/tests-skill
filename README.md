@@ -70,7 +70,7 @@ The core is not negotiable because every rule in it is true in any language. Eve
 | `t.sh bisect GOOD -- CMD` | which commit broke it, skipping the ones that cannot answer |
 | `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
 
-`run` is the only place a verdict is formed and the other three call it, so `bisect` cannot drift away from `run` about what counts as a failure. It exits with the command's own status, except **3** when the command exited 0 while its log said otherwise, and **4** when repeated runs disagreed
+`run` is the only place a verdict is formed and the other three call it, so `bisect` cannot drift away from `run` about what counts as a failure. It exits with the command's own status, and keeps its own verdicts in a band no test runner uses: **79** when the command exited 0 while its log said otherwise, **86** when repeated runs disagreed, **64** for a usage error and **70** when the harness itself failed. Low numbers were tried first and collide: GNU make exits 2 on any error, pytest uses 2 to 5, and cargo-nextest exits 4 for "no tests ran", the very thing `run` exists to catch
 
 `bisect` speaks git's vocabulary properly: 125 for a commit that cannot answer — one that will not build, has no test runner yet, or whose log says nothing ran — and a crash clamped to "bad" rather than the 139 that would abort the whole session
 

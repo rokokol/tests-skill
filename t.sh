@@ -29,17 +29,28 @@
 # ./tests/t.conf, which is read from the current directory only. It never carries the
 # command. See the config section below, or `allow`/`markers`/`pattern`/`logdir`.
 #
-# Exit status: CMD's own, passed through unchanged, except
-#   4  the runs disagreed with each other (flaky)
-#   3  CMD exited 0 but its log says it did not do what a pass claims
-#   2  a usage or harness error, before CMD ever ran
+# Exit status: CMD's own, passed through unchanged, except a band no test runner uses.
+# 2, 3 and 4 were tried first and collide: GNU make exits 2 on any error, pytest uses
+# 2–5, cargo-nextest exits 4 for "no tests ran", which is the very thing run detects.
+#   64  a usage error — a flag, the config, a missing --, an allow regex grep rejects
+#   70  the harness itself failed — a log it cannot write, a file it cannot put back
+#   79  CMD exited 0 but its log says it did not do what a pass claims (run)
+#   86  the runs disagreed with each other (flaky)
 set -uo pipefail
 
-usage() { sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# The header above, up to the first line that is not a comment, is the help text
+usage() { awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; }
 
+# 64 is EX_USAGE and 70 is EX_SOFTWARE in sysexits(3): the caller asked wrongly, or the
+# harness broke. Neither is CMD's status, and a probe that skips on 64 must not skip on 70.
 die() {
   printf 't.sh: %s\n' "$1" >&2
-  exit 2
+  exit 64
+}
+
+fatal() {
+  printf 't.sh: %s\n' "$1" >&2
+  exit 70
 }
 
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -234,12 +245,12 @@ cmd_run() {
   # marker set stops the run instead of quietly making every run a pass
   load_markers
 
-  mkdir -p "$logdir" || die "run: cannot create $logdir"
+  mkdir -p "$logdir" || fatal "run: cannot create $logdir"
   local log="${T_LOGFILE:-}"
   [[ -n "$log" ]] || log="$logdir/run-$(date +%Y%m%d-%H%M%S)-$$.log"
   # Refuse before running rather than discover it afterwards: a run whose log could not be
   # written cannot be read, and reading the log is half of what this harness is for
-  : >"$log" || die "run: cannot write $log"
+  : >"$log" || fatal "run: cannot write $log"
 
   # CMD's own status, never the pipeline's. `cmd | tee` reports tee and `cmd | tail`
   # reports tail — both are 0 for a suite that just failed, which is how a red run
@@ -252,7 +263,7 @@ cmd_run() {
 
   local verdict=$status
   if ((status == 0)) && [[ -n "$hits" ]]; then
-    verdict=3
+    verdict=79
   fi
 
   # The verdict is decided above, before a single line of the log is shown. Whatever is
@@ -267,7 +278,7 @@ cmd_run() {
 
   case "$verdict" in
     0) printf 't.sh: pass — exit 0, log clean (%s)\n' "$log" ;;
-    3) printf 't.sh: LIED — exit 0, but the log above says otherwise (%s)\n' "$log" >&2 ;;
+    79) printf 't.sh: LIED — exit 0, but the log above says otherwise (%s)\n' "$log" >&2 ;;
     *) printf 't.sh: fail — exit %d (%s)\n' "$status" "$log" >&2 ;;
   esac
 
@@ -312,7 +323,7 @@ cmd_flaky() {
 
   local stamp
   stamp="$logdir/flaky-$(date +%Y%m%d-%H%M%S)-$$"
-  mkdir -p "$stamp" || die "flaky: cannot create $stamp"
+  mkdir -p "$stamp" || fatal "flaky: cannot create $stamp"
 
   local i status baseline="" differed=0 agreed=0 first_divergence=""
   for ((i = 1; i <= n; i++)); do
@@ -344,7 +355,7 @@ cmd_flaky() {
   printf 'first divergence: %s\n' "$first_divergence" >&2
   printf '%d agreed, %d differed. Fix the race or quarantine the test; do not retry it.\n' \
     "$agreed" "$differed" >&2
-  return 4
+  return 86
 }
 
 # The verdict on ONE commit, in the vocabulary `git bisect run` speaks:
@@ -391,9 +402,9 @@ cmd_bisect_probe() {
   cmd_run -t 5 "${pass[@]+"${pass[@]}"}" "$@" || status=$?
   case "$status" in
     0) return 0 ;;
-    2 | 3 | 125 | 127)
-      # 2 the harness could not run it, 3 the run did not really run, 127 the runner is
-      # not there at this commit. None of them is evidence against the commit.
+    64 | 70 | 79 | 125 | 127)
+      # 64 and 70 the harness could not run it, 79 the run did not really run, 127 the
+      # runner is not there at this commit. None of them is evidence against the commit.
       echo "t.sh: no verdict from this commit (exit $status) — skipping" >&2
       return 125
       ;;
@@ -430,16 +441,16 @@ cmd_bisect() {
   # Logs go outside the working tree: bisect checks other commits out over it, and a
   # directory of logs sitting in the middle of that is noise at best
   local logdir
-  logdir=$(mktemp -d) || die "bisect: cannot create a log directory"
+  logdir=$(mktemp -d) || fatal "bisect: cannot create a log directory"
   echo "t.sh: logs for this bisect are in $logdir"
 
   # Leaving a repository in a detached bisect state is a nasty thing to do to whoever runs
   # this, including on an interrupt
   trap 'git bisect reset >/dev/null 2>&1 || :' EXIT
 
-  git bisect start >/dev/null || die "bisect: could not start"
-  git bisect bad HEAD >/dev/null || die "bisect: could not mark HEAD bad"
-  git bisect good "$good" >/dev/null || die "bisect: could not mark $good good"
+  git bisect start >/dev/null || fatal "bisect: could not start"
+  git bisect bad HEAD >/dev/null || fatal "bisect: could not mark HEAD bad"
+  git bisect good "$good" >/dev/null || fatal "bisect: could not mark $good good"
 
   local status=0
   T_LOGDIR="$logdir" git bisect run "$self" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" || status=$?
@@ -539,7 +550,7 @@ cmd_falsify() {
   local __slurped=""
   for f in "${files[@]}"; do
     [[ -r "$f" ]] || die "falsify: $defects names $f, which cannot be read"
-    slurp __slurped "$f" || die "falsify: cannot read $f"
+    slurp __slurped "$f" || fatal "falsify: cannot read $f"
     originals+=("$__slurped")
   done
 
@@ -553,7 +564,7 @@ cmd_falsify() {
       printf -v "$1" '%s' "${originals[$i]}"
       return 0
     done
-    die "falsify: $wanted has no recorded original — the defect list and the file list disagree"
+    fatal "falsify: $wanted has no recorded original — the defect list and the file list disagree"
   }
 
   # Restoration happens here and not only at the end of the loop, so an interrupt, a
@@ -579,7 +590,7 @@ cmd_falsify() {
     cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@" >/dev/null 2>&1 || status=$?
     case "$status" in
       0) printf 'survived' ;;
-      3) printf 'unusable' ;;
+      79) printf 'unusable' ;;
       *) printf 'caught' ;;
     esac
   }
@@ -638,10 +649,10 @@ cmd_falsify() {
   restore_all
   trap - EXIT INT TERM
   for f in "${files[@]}"; do
-    slurp __slurped "$f" || die "falsify: cannot re-read $f to confirm it was restored"
+    slurp __slurped "$f" || fatal "falsify: cannot re-read $f to confirm it was restored"
     original_of pristine "$f"
     [[ "$__slurped" == "$pristine" ]] ||
-      die "falsify: $f was not restored to what it was — restore it from git before doing anything else"
+      fatal "falsify: $f was not restored to what it was — restore it from git before doing anything else"
   done
 
   ((${#ran[@]} > 0)) || die "falsify: no defect matched the filter '$filter'"
@@ -665,11 +676,11 @@ case "$cmd" in
   -h | --help | help) usage ;;
   '')
     usage >&2
-    exit 2
+    exit 64
     ;;
   *)
     printf 't.sh: no such subcommand: %s\n\n' "$cmd" >&2
     usage >&2
-    exit 2
+    exit 64
     ;;
 esac
