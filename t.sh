@@ -47,7 +47,8 @@
 #   84  a defect never let the suite finish within the deadline (falsify)
 #   85  the suite was red, or never really ran, before any edit was made (falsify)
 #   86  the runs disagreed with each other (flaky)
-#   87  the defect list has drifted: a find text no longer matches exactly once (falsify)
+#   87  the defect list has drifted: a find text no longer matches exactly once, or a
+#       defect declared as one nothing can catch was caught (falsify)
 #   88  a defect only stopped the build, so the tests were never asked (falsify)
 #   89  only commits that could not answer are left between good and bad (bisect)
 set -uo pipefail
@@ -632,16 +633,35 @@ DEF_FILE=()
 DEF_FIND=()
 DEF_REPLACE=()
 DEF_WHY=()
+DEF_EXPECT=()
 
 # The one call a defects file makes. Sourced, so the file is plain bash and needs no parser.
+#
+#   defect NAME FILE FIND REPLACE CONSEQUENCE
+#   defect NAME FILE FIND REPLACE CONSEQUENCE expect survived REASON
+#
+# The second form declares a defect nothing can catch — an edit that changes the code
+# without changing what any caller can observe — with the reason written where the claim
+# is. It is reported as expected rather than as a survivor, and the day the suite does
+# catch it the expectation is stale and says so, so a declaration cannot outlive its truth.
+# Declared on the line rather than in a separate list of exceptions, the way Stryker and
+# cargo-mutants do it, because an exception kept elsewhere is an exception nobody rereads.
 defect() {
+  local expect=""
+  if (($# == 8)); then
+    [[ "$6" == expect && "$7" == survived && -n "$8" ]] ||
+      die "defects: after the consequence, the only words allowed are: expect survived REASON"
+    expect="$8"
+    set -- "$1" "$2" "$3" "$4" "$5"
+  fi
   (($# == 5)) ||
-    die "defects: defect takes 5 arguments (name file find replace consequence), got $#"
+    die "defects: defect takes 5 arguments (name file find replace consequence), or 8 with 'expect survived REASON', got $#"
   DEF_NAME+=("$1")
   DEF_FILE+=("$2")
   DEF_FIND+=("$3")
   DEF_REPLACE+=("$4")
   DEF_WHY+=("$5")
+  DEF_EXPECT+=("$expect")
 }
 
 # Reads a file into the variable NAMED by $1, so putting it back is byte-for-byte rather
@@ -741,7 +761,8 @@ cmd_falsify() {
   # log per defect; and results.json for whatever reads machines. Written as the run
   # goes, so an interrupted run still leaves what it had found. Only the files this
   # writes are cleared first — the directory may be somebody's.
-  rm -f "$out"/caught.txt "$out"/survived.txt "$out"/stale.txt "$out"/unusable.txt "$out"/timeout.txt "$out"/results.json
+  rm -f "$out"/caught.txt "$out"/survived.txt "$out"/stale.txt "$out"/unusable.txt "$out"/timeout.txt \
+    "$out"/expected.txt "$out"/results.json
   rm -rf "$out/logs"
   mkdir -p "$out/logs" || fatal "falsify: cannot create $out"
   local -a RES_NAME=() RES_FILE=() RES_LINE=() RES_VERDICT=() RES_WHY=()
@@ -930,8 +951,8 @@ cmd_falsify() {
     *) fatal "falsify: the baseline run ended without a verdict — the harness could not run the suite (see $logdir)" ;;
   esac
 
-  local name file find replace why content mutated occurrences pristine line
-  local -a caught=() survived=() stale=() unusable=() timedout=() ran=()
+  local name file find replace why expect content mutated occurrences pristine line
+  local -a caught=() survived=() stale=() unusable=() timedout=() expected=() ran=()
   for i in "${!DEF_NAME[@]}"; do
     name="${DEF_NAME[$i]}"
     [[ -z "$filter" || "$name" == *"$filter"* ]] || continue
@@ -939,6 +960,7 @@ cmd_falsify() {
     find="${DEF_FIND[$i]}"
     replace="${DEF_REPLACE[$i]}"
     why="${DEF_WHY[$i]}"
+    expect="${DEF_EXPECT[$i]}"
     ran+=("$name")
 
     original_of content "$file"
@@ -967,10 +989,28 @@ cmd_falsify() {
     suite_verdict "$out/logs/$(log_name "$name").log" "$@"
     printf '%s' "$content" >"$file"
 
+    # A declared exception: surviving is the expected outcome and no finding; being caught
+    # means the declaration has outlived its truth, which is the list's fault, like stale
+    if [[ -n "$expect" ]]; then
+      case "$VERDICT" in
+        survived) VERDICT=expected ;;
+        caught) VERDICT=disproved ;;
+      esac
+    fi
+
     case "$VERDICT" in
       caught)
         printf 'caught    %s\n' "$name"
         caught+=("$name")
+        ;;
+      expected)
+        printf 'expected  %s: %s\n' "$name" "$expect"
+        expected+=("$name")
+        ;;
+      disproved)
+        printf 'stale     %s: declared as one nothing can catch, and the suite caught it — drop the expectation\n' "$name"
+        stale+=("$name")
+        VERDICT=stale
         ;;
       survived)
         printf 'SURVIVED  %s: %s\n' "$name" "$why"
@@ -1017,8 +1057,9 @@ cmd_falsify() {
   # the code, or it breaks the build rather than the behaviour, and a report that folded
   # those into the survivors blamed the tests for a list nobody had maintained.
   echo
-  printf '%d caught, %d SURVIVED, %d stale, %d unusable, %d timed out, of %d defect(s) — %s/\n' \
-    "${#caught[@]}" "${#survived[@]}" "${#stale[@]}" "${#unusable[@]}" "${#timedout[@]}" "${#ran[@]}" "$out"
+  printf '%d caught, %d SURVIVED, %d expected, %d stale, %d unusable, %d timed out, of %d defect(s) — %s/\n' \
+    "${#caught[@]}" "${#survived[@]}" "${#expected[@]}" "${#stale[@]}" "${#unusable[@]}" "${#timedout[@]}" \
+    "${#ran[@]}" "$out"
   if ((${#survived[@]} > 0)); then
     printf 'the suite did not notice %d of them — read the SURVIVED lines: each names what nobody checks\n' "${#survived[@]}" >&2
     return 83
@@ -1028,7 +1069,7 @@ cmd_falsify() {
     return 84
   fi
   if ((${#stale[@]} > 0)); then
-    printf 'the defect list has drifted from the code: %d find text(s) no longer match once\n' "${#stale[@]}" >&2
+    printf 'the defect list has drifted from the code: %d entry(ies) no longer describe it — see the stale lines\n' "${#stale[@]}" >&2
     return 87
   fi
   if ((${#unusable[@]} > 0)); then

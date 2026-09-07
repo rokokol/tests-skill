@@ -722,6 +722,23 @@ DEFECTS
   : >"$fal/tests/empty.sh"
   (cd "$fal" && tsh falsify -d tests/empty.sh -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "falsify accepted an empty defect list, which proves nothing (got $status)"
+  # A defect declared as one nothing can catch is expected to survive, and no finding;
+  # the day the suite catches it, the declaration is stale
+  printf "defect 'strip/spaces' 'impl.sh' \"tr -d ' '\" 'cat' 'spaces stay' expect survived 'no caller strips yet'\n" >"$fal/tests/expected.sh"
+  status=0
+  fal_out=$(cd "$fal" && tsh falsify -d tests/expected.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "a defect declared as expected to survive was reported as a survivor (got $status):"$'\n'"$fal_out"
+  grep -q '^expected  strip/spaces: no caller strips yet' <<<"$fal_out" || fail "falsify did not report the expected survivor as expected:"$'\n'"$fal_out"
+  grep -qx 'strip/spaces' "$work/fo3/expected.txt" || fail "falsify.out/expected.txt does not name the expected survivor"
+  printf "defect 'clamp/negative' 'impl.sh' 'if [ \"\$1\" -lt 0 ]' 'if false' 'negatives leak' expect survived 'wrong'\n" >"$fal/tests/expected-wrong.sh"
+  status=0
+  fal_out=$(cd "$fal" && tsh falsify -d tests/expected-wrong.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh 2>&1) || status=$?
+  ((status == 87)) || fail "a declaration the suite disproved was not reported stale (got $status, want 87):"$'\n'"$fal_out"
+  grep -q '^stale     clamp/negative: declared as one nothing can catch' <<<"$fal_out" || fail "falsify did not say the expectation was disproved:"$'\n'"$fal_out"
+  printf "defect 'x/y' 'impl.sh' 'a' 'b' 'c' expect caught 'z'\n" >"$fal/tests/expected-bad.sh"
+  status=0
+  (cd "$fal" && tsh falsify -d tests/expected-bad.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "falsify accepted 'expect caught', which is not a thing (got $status)"
   # A defect in a test file is "caught" by whatever it breaks and reads as coverage
   printf 'helper=1\n' >"$fal/tests/helper.sh"
   git -C "$fal" add tests/helper.sh && git -C "$fal" commit -q -m "a helper under tests/"
@@ -899,6 +916,8 @@ check_proofs() {
       sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
+    plant behaviour unexpected "was reported as a survivor" "a falsify that ignores a declared exception" \
+      sed t.sh 's/^    if \[\[ -n "\$expect" \]\]; then$/    if false; then # planted/' '# planted'
     plant behaviour nowhere "where the edit is" "a falsify that names a survivor without its line" \
       drop t.sh '  - %s\n'
     plant behaviour anyfile "aimed at a test file" "a falsify that edits test files" \
@@ -967,8 +986,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=21 ;;
-    all) want_planted=33 ;;
+    behaviour) want_planted=22 ;;
+    all) want_planted=34 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
