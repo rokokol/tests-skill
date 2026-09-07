@@ -19,12 +19,14 @@
 #                             INCONCLUSIVE, exit 89, and git's session log is kept
 #   t.sh bisect-probe [-b BUILD] [-l DIR] [-m SET] [-p PATTERN] [-t N] -- CMD...
 #                             internal: the single-commit verdict `git bisect run` calls
-#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
+#   t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
 #                             break one guard at a time, as written by hand in FILE
 #                             (default tests/defects.sh), and require the suite to notice.
 #                             A defect the suite survives names something nobody checks.
 #                             Each run is held to a deadline, five times the unbroken
-#                             suite's own time or twenty seconds, or --timeout
+#                             suite's own time or twenty seconds, or --timeout. What was
+#                             found goes under DIR (default falsify.out): one file of
+#                             names per verdict, a log per defect, and results.json
 #
 # The command is always explicit, after `--`. Nothing here guesses what your suite is:
 # a harness that guesses runs the wrong thing on the day it matters.
@@ -660,13 +662,28 @@ count_occurrences() {
   printf '%d' "$n"
 }
 
+# A JSON string literal, for results.json: a consequence sentence may carry quotes
+json_str() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '"%s"' "$s"
+}
+
 cmd_falsify() {
-  local defects="tests/defects.sh" build="" filter="" logdir="" deadline=""
+  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out"
   local -a pass=()
   while (($#)); do
     case "$1" in
       -d)
         defects="${2:?-d needs a file}"
+        shift 2
+        ;;
+      --out)
+        out="${2:?--out needs a directory}"
         shift 2
         ;;
       --timeout)
@@ -699,11 +716,42 @@ cmd_falsify() {
   done
   [[ "${1:-}" == "--" ]] || die "falsify: the suite command must follow -- (t.sh falsify -- pytest -q)"
   [[ -r "$defects" ]] || die "falsify: cannot read $defects — write the defect list first (see templates/defects.sh)"
-  # The same policy run obeys, for the same reason flaky reads it: one log directory
-  POLICY_LOGDIR=""
-  load_config
-  [[ -n "$logdir" ]] || logdir="${T_LOGDIR:-${POLICY_LOGDIR:-.test-logs}}"
-  mkdir -p "$logdir" || fatal "falsify: cannot create $logdir"
+  # Everything a run found goes under one directory, in the shape cargo-mutants made
+  # familiar: one file of names per verdict, which is what a diff or a grep wants; one
+  # log per defect; and results.json for whatever reads machines. Written as the run
+  # goes, so an interrupted run still leaves what it had found. Only the files this
+  # writes are cleared first — the directory may be somebody's.
+  rm -f "$out"/caught.txt "$out"/survived.txt "$out"/stale.txt "$out"/unusable.txt "$out"/timeout.txt "$out"/results.json
+  rm -rf "$out/logs"
+  mkdir -p "$out/logs" || fatal "falsify: cannot create $out"
+  local -a RES_NAME=() RES_FILE=() RES_VERDICT=() RES_WHY=()
+  write_results() {
+    local i first=1
+    {
+      printf '{\n  "deadline": %s,\n  "defects": [' "${deadline:-null}"
+      for i in "${!RES_NAME[@]}"; do
+        if ((first)); then first=0; else printf ','; fi
+        printf '\n    {"name": %s, "file": %s, "verdict": %s, "consequence": %s}' \
+          "$(json_str "${RES_NAME[$i]}")" "$(json_str "${RES_FILE[$i]}")" \
+          "$(json_str "${RES_VERDICT[$i]}")" "$(json_str "${RES_WHY[$i]}")"
+      done
+      printf '\n  ]\n}\n'
+    } >"$out/results.json.new" && mv "$out/results.json.new" "$out/results.json"
+  }
+  record() { # record VERDICT NAME FILE CONSEQUENCE
+    local list="$1"
+    [[ "$list" != timedout ]] || list=timeout
+    printf '%s\n' "$2" >>"$out/$list.txt"
+    RES_NAME+=("$2")
+    RES_FILE+=("$3")
+    RES_VERDICT+=("$1")
+    RES_WHY+=("$4")
+    write_results
+  }
+  log_name() { # log_name DEFECT-NAME -> a file name: the slashes in a name become dashes
+    local n="$1"
+    printf '%s' "${n//\//-}"
+  }
 
   # A dirty tree makes an interrupted restore indistinguishable from your own edits, and
   # this is a command that edits your source on purpose
@@ -784,17 +832,16 @@ cmd_falsify() {
   # everything it spawned, not just the shell around them; without GNU timeout(1), which
   # macOS does not have, that is what a watchdog is.
   VERDICT=""
-  local runs=0
-  suite_verdict() {
+  suite_verdict() { # suite_verdict LOG CMD...
+    local log="$1" kind="" pid waited=0 grace=0
+    shift
     VERDICT=none
     if [[ -n "$build" ]]; then
-      if ! sh -c "$build" >/dev/null 2>&1; then
+      if ! sh -c "$build" >"$log" 2>&1; then
         VERDICT=unusable
         return
       fi
     fi
-    runs=$((runs + 1))
-    local log="$logdir/falsify-$$-$runs.log" kind="" pid waited=0 grace=0
     set -m
     (T_LOGFILE="$log" cmd_run -t 0 "${pass[@]+"${pass[@]}"}" "$@") >/dev/null 2>&1 &
     pid=$!
@@ -834,7 +881,7 @@ cmd_falsify() {
   # — five times leaves room for a slower path, twenty seconds for a fast suite whose
   # five times would be a fraction of a second. --timeout sets it outright.
   local started=$SECONDS
-  suite_verdict "$@"
+  suite_verdict "$out/logs/baseline.log" "$@"
   if [[ -z "$deadline" ]]; then
     deadline=$(((SECONDS - started) * 5))
     ((deadline >= 20)) || deadline=20
@@ -874,6 +921,7 @@ cmd_falsify() {
       # quietly stops testing the thing it was written for
       printf 'stale     %s: its find text matches %s times in %s, not once\n' "$name" "$occurrences" "$file"
       stale+=("$name")
+      record stale "$name" "$file" "$why"
       continue
     fi
 
@@ -886,7 +934,7 @@ cmd_falsify() {
     # then passes against it, and that would be reported as a survivor: a read-only file
     # once made a guard the suite does cover read as one nobody checks
     printf '%s' "$mutated" >"$file" || fatal "falsify: cannot write $file — the tree is untouched, and nothing was measured"
-    suite_verdict "$@"
+    suite_verdict "$out/logs/$(log_name "$name").log" "$@"
     printf '%s' "$content" >"$file"
 
     case "$VERDICT" in
@@ -916,6 +964,7 @@ cmd_falsify() {
       # matching nothing here is how a defect once vanished from the report.
       *) fatal "falsify: no verdict for $name — the suite run ended without one" ;;
     esac
+    record "$VERDICT" "$name" "$file" "$why"
   done
 
   restore_all
@@ -934,8 +983,8 @@ cmd_falsify() {
   # the code, or it breaks the build rather than the behaviour, and a report that folded
   # those into the survivors blamed the tests for a list nobody had maintained.
   echo
-  printf '%d caught, %d SURVIVED, %d stale, %d unusable, %d timed out, of %d defect(s)\n' \
-    "${#caught[@]}" "${#survived[@]}" "${#stale[@]}" "${#unusable[@]}" "${#timedout[@]}" "${#ran[@]}"
+  printf '%d caught, %d SURVIVED, %d stale, %d unusable, %d timed out, of %d defect(s) — %s/\n' \
+    "${#caught[@]}" "${#survived[@]}" "${#stale[@]}" "${#unusable[@]}" "${#timedout[@]}" "${#ran[@]}" "$out"
   if ((${#survived[@]} > 0)); then
     printf 'the suite did not notice %d of them — read the SURVIVED lines: each names what nobody checks\n' "${#survived[@]}" >&2
     return 83

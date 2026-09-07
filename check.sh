@@ -583,7 +583,7 @@ DEFECTS
   cp "$fal/impl.sh" "$work/impl.sh.pristine"
 
   status=0
-  fal_out=$(cd "$fal" && tsh falsify -b 'sh -n impl.sh' -l "$work/logs" -- sh suite.sh 2>&1) || status=$?
+  fal_out=$(cd "$fal" && tsh falsify -b 'sh -n impl.sh' -l "$work/logs" --out "$work/falsify.out" -- sh suite.sh 2>&1) || status=$?
   ((status == 83)) || fail "falsify exited $status where a defect went unnoticed (want 83):"$'\n'"$fal_out"
   grep -q '^caught    clamp/negative' <<<"$fal_out" ||
     fail "falsify did not credit the suite for the guard it does cover:"$'\n'"$fal_out"
@@ -595,6 +595,20 @@ DEFECTS
   # evidence that any test noticed anything
   grep -q '^unusable  syntax/broken' <<<"$fal_out" ||
     fail "falsify credited the suite for an edit that merely stopped the code building:"$'\n'"$fal_out"
+  echo "== falsify leaves what it found where a diff and a grep can read it"
+  # One file of names per verdict, a log per defect, results.json for machines
+  fo="$work/falsify.out"
+  grep -qx 'clamp/negative' "$fo/caught.txt" || fail "falsify.out/caught.txt does not name the caught defect"
+  grep -qx 'strip/spaces' "$fo/survived.txt" || fail "falsify.out/survived.txt does not name the survivor"
+  grep -qx 'gone/drifted' "$fo/stale.txt" || fail "falsify.out/stale.txt does not name the stale entry"
+  grep -qx 'syntax/broken' "$fo/unusable.txt" || fail "falsify.out/unusable.txt does not name the unusable entry"
+  [[ -s "$fo/logs/clamp-negative.log" ]] || fail "falsify.out/logs has no log for clamp/negative"
+  [[ -s "$fo/logs/baseline.log" ]] || fail "falsify.out/logs has no log for the baseline run"
+  [[ "$(grep -c '"verdict": "survived"' "$fo/results.json")" == 1 ]] ||
+    fail "results.json does not carry exactly one survivor"
+  grep -q '"consequence": "a name keeps the spaces' "$fo/results.json" ||
+    fail "results.json does not carry the consequence sentence"
+
   echo "== falsify puts the source back byte for byte"
   cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
     fail "falsify did not restore impl.sh byte for byte"
@@ -867,6 +881,8 @@ check_proofs() {
       sed t.sh 's/^    \[\[ -z "\$complaint" \]\] || die "allow:.*$/    : "$complaint" # planted/' '# planted'
     plant behaviour carryon "carried on after an interrupt" "a falsify whose interrupt handler returns" \
       sed t.sh "s/^  trap 'end_mutant; restore_all; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
+    plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
+      sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
     plant behaviour nodeadline "nothing timed it out" "a falsify with no deadline" \
       sed t.sh 's/^      if \[\[ -n "\$deadline" \]\] \&\& ((waited >= deadline \* 10)); then$/      if false; then # planted/' '# planted'
     plant behaviour surrender "want 89" "a bisect that reports an all-skipped history as resolved" \
@@ -931,8 +947,8 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   case "$mode" in
     lint) want_planted=12 ;;
-    behaviour) want_planted=18 ;;
-    all) want_planted=30 ;;
+    behaviour) want_planted=19 ;;
+    all) want_planted=31 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
