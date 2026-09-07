@@ -9,11 +9,12 @@
       lib = nixpkgs.lib;
       # Darwin too: the harness travels to repositories that run CI on macOS, and a
       # contributor there gets `nix develop -c ./check.sh` rather than a flake that does
-      # not know their system
+      # not know their system. Apple silicon only — Apple stopped selling Intel machines
+      # in 2023 and nixpkgs 26.11 dropped x86_64-darwin, so naming it was a platform this
+      # flake could not even be evaluated for, which the gate now refuses.
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
         "aarch64-darwin"
       ];
       forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});

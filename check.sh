@@ -126,6 +126,18 @@ check_lint() {
   grep -q 'package-ecosystem: github-actions' .github/dependabot.yml ||
     fail ".github/dependabot.yml does not watch the github-actions ecosystem"
 
+  echo "== the flake evaluates for every system it claims, not only for this one"
+  # `nix flake check` reads the system it is run on and says "all checks passed", which is
+  # how this flake named four platforms while one of them could not be evaluated at all:
+  # nixpkgs dropped x86_64-darwin and nothing here noticed, because the gate had never
+  # looked at flake.nix. The list is read out of the flake rather than repeated here, one
+  # eval for all of them, and --offline so the gate's promise about the network still holds.
+  flake_systems=$(nix eval --offline --json '.#devShells' \
+    --apply 'ss: builtins.mapAttrs (n: v: v.default.drvPath) ss' 2>"$work/flake.err") ||
+    fail "the flake claims a system it cannot be evaluated for: $(sed 's/^ *//' "$work/flake.err" | grep -m 1 -E 'error: .+' || tail -1 "$work/flake.err")"
+  [[ "$flake_systems" == *x86_64-linux* ]] ||
+    fail "the flake does not offer a dev shell on x86_64-linux, which is what CI runs the gate on"
+
   echo "== SKILL.md loads, every reference is reachable, every link and anchor resolves"
   # The ci skill's gate for a skill repository, copied verbatim: the frontmatter an agent
   # loads the skill by, reachability as a real walk over links from SKILL.md, and every
@@ -1081,6 +1093,11 @@ check_proofs() {
     # gate proving it reads its own stderr rather than scrolling past it
     plant lint noisy-awk "writes to stderr" "an awk program that warns while the gate stays green" \
       sed check.sh 's/( \*\\| \*/(\\ *\\|\\ */' '(\ *\|\ *'
+    # The one darwin the flake names is swapped for the one nixpkgs dropped, rather than a
+    # line being inserted: `\n` in a replacement is GNU sed, and the BSD sed on a mac is
+    # where this copy would then fail for the sed instead of for the defect
+    plant lint dead-system "cannot be evaluated for" "a flake claiming a system nixpkgs dropped" \
+      sed flake.nix 's/"aarch64-darwin"/"x86_64-darwin"/' '"x86_64-darwin"'
     plant lint dead "a dead entry guards nothing" "a marker matching nothing" \
       append markers/default.txt $'a marker matching nothing\n'
     plant lint noisy "it would redden healthy runs" "a marker that fires on a healthy run" \
