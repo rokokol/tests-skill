@@ -714,6 +714,35 @@ DEFECTS
   (cd "$since_repo" && tsh falsify --since no-such-ref -l "$work/logs" --out "$work/fo-since" -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "falsify accepted --since with a ref that does not exist (got $status)"
 
+  echo "== --shard splits the list between checkouts, losing nothing and running nothing twice"
+  # The whole claim of sharding is a partition: the union of the shards is the list, and no
+  # defect is in two of them. Asserted over several widths, and one wider than the list,
+  # because an off-by-one in the offset or the stride shows at some N and not at others —
+  # with two shards a stride of 1 loses nothing, it just runs everything twice.
+  shard_want="clamp/negative gone/drifted strip/spaces syntax/broken"
+  for n in 1 2 3 5; do
+    shard_seen=""
+    for i in $(seq 1 "$n"); do
+      (cd "$fal" && tsh falsify --shard "$i/$n" -l "$work/logs" --out "$work/fo-shard-$n-$i" -- sh suite.sh) >/dev/null 2>&1 || :
+      # The names files rather than the report: that is the interface a CI job reads, and
+      # parsing the prose would make this a test of the wording
+      # A shard the matrix is too wide for writes no verdict file at all, and under errexit
+      # an unguarded cat or grep in an assignment kills the gate without a word
+      shard_seen="$shard_seen$(cat "$work/fo-shard-$n-$i"/*.txt 2>/dev/null || :)"$'\n'
+    done
+    shard_seen=$(grep -v '^$' <<<"$shard_seen" | sort || :)
+    shard_twice=$(uniq -d <<<"$shard_seen" | tr '\n' ' ')
+    [[ -z "${shard_twice// /}" ]] ||
+      fail "--shard over $n shards ran a defect in more than one of them: $shard_twice"
+    [[ "$(uniq <<<"$shard_seen" | tr '\n' ' ')" == "$shard_want " ]] ||
+      fail "--shard over $n shards covered [$(uniq <<<"$shard_seen" | tr '\n' ' ')] and not the whole list [$shard_want]"
+  done
+  for bad in 0/2 3/2 abc 1/0; do
+    status=0
+    (cd "$fal" && tsh falsify --shard "$bad" -l "$work/logs" --out "$work/fo-shard-bad" -- sh suite.sh) >/dev/null 2>&1 || status=$?
+    ((status == 64)) || fail "falsify accepted --shard $bad (got $status)"
+  done
+
   echo "== --worktree falsifies a checkout of HEAD and leaves the tree in front of you alone"
   # The suite prints where it runs, so the log can show it was not the fixture's tree
   status=0
@@ -1195,6 +1224,14 @@ check_proofs() {
       sed t.sh 's/^    git -C "\$root" worktree remove --force "\$wt" >\/dev\/null 2>&1 || :$/    : # planted/' '# planted'
     plant behaviour unsince "ran nothing and did not say so" "a falsify --since that passes an empty selection in silence" \
       sed t.sh 's/^    printf '"'"'nothing to falsify: .*$/    : # planted/' '# planted'
+    # One per half of what sharding claims. A stride of one leaves every shard running the
+    # whole list, which loses nothing and so passes any check that only counts coverage; an
+    # offset one too far drops a defect from every width at once, which no duplicate check
+    # would see. Neither plant can stand in for the other.
+    plant behaviour shard-overlap "in more than one of them" "a shard stride that hands every shard the whole list" \
+      sed t.sh 's/; s += shard_n))/; s += 1))/' 's += 1))'
+    plant behaviour shard-gap "not the whole list" "a shard offset that drops a defect from every width" \
+      sed t.sh 's/for ((s = shard_i - 1;/for ((s = shard_i;/' 'for ((s = shard_i;'
     plant behaviour unannotated "did not annotate the survivor" "a falsify that keeps its findings out of the diff" \
       sed t.sh 's/^        annotate error "\$file" "\$line" "SURVIVED \$name: \$why"$/        : # planted/' '# planted'
     plant behaviour unexpected "was reported as a survivor" "a falsify that ignores a declared exception" \
@@ -1279,8 +1316,8 @@ check_proofs() {
   # unnoticed. These are the counts with that block skipped.
   case "$mode" in
     lint) want_planted=20 ;;
-    behaviour) want_planted=30 ;;
-    all) want_planted=50 ;;
+    behaviour) want_planted=32 ;;
+    all) want_planted=52 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

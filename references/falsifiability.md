@@ -41,6 +41,17 @@ The safety properties that make it something you can run on a Friday:
 - **The original is held in memory and written back in a trap** covering interrupt and termination, then compared byte for byte. A marker names the defect in flight while it is on disk, `FALSIFY-IN-PROGRESS` in the worktree or `in-flight` under `falsify.out/`, so a mutant that outlives a run is found by the name of what put it there.
 - **`--since REF` runs only the defects in files changed since a ref**, for a pull request. It is a filter and not a proof — a change in one file breaks the tests of another — so the full list runs on the default branch, and an empty selection is said out loud.
 
+- **`--shard I/N` runs every Nth defect**, so N checkouts cover the whole list between them. A falsification costs one suite run per defect and they are independent, which is what makes the list the thing to split rather than the suite; every Nth rather than a block, because the defects of one file sit together and share a build, so blocks hand one shard all the slow ones. Nothing inside the harness is concurrent — the parallelism is the matrix's, so it scales past one machine and brings none of the flakiness that running a suite against itself does. Each shard prints its own summary and carries its own exit code, so a job fails if any shard does, and each needs its own checkout: two shards in one tree would meet each other's mutants.
+
+```yaml
+strategy:
+  matrix:
+    shard: [1, 2, 3, 4]
+steps:
+  - uses: actions/checkout@v7
+  - run: t.sh falsify --shard ${{ matrix.shard }}/4 -- <the suite>
+```
+
 ## Writing the defect list
 
 Write one entry as each guard is written, and it doubles as prose documentation of what the guard is for. The shapes, in order of what they find:

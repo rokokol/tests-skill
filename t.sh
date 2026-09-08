@@ -736,7 +736,7 @@ json_str() {
 }
 
 cmd_falsify() {
-  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out" any_file="" since="" worktree=""
+  local defects="tests/defects.sh" build="" filter="" logdir="" deadline="" out="falsify.out" any_file="" since="" worktree="" shard="" shard_i=0 shard_n=0
   local -a pass=()
   while (($#)); do
     case "$1" in
@@ -754,6 +754,19 @@ cmd_falsify() {
         ;;
       --since)
         since="${2:?--since needs a git ref}"
+        shift 2
+        ;;
+      --shard)
+        shard="${2:?--shard needs I/N}"
+        # Refused here rather than producing an empty or overlapping selection later: a
+        # shard nobody runs, or one run twice, is a defect list that silently stops
+        # covering what it names
+        [[ "$shard" =~ ^[0-9]+/[0-9]+$ ]] || die "falsify: --shard needs I/N, got '$shard'"
+        shard_i="${shard%/*}"
+        shard_n="${shard#*/}"
+        ((shard_n >= 1)) || die "falsify: --shard needs at least one shard, got '$shard'"
+        ((shard_i >= 1 && shard_i <= shard_n)) ||
+          die "falsify: --shard $shard asks for shard $shard_i of $shard_n"
         shift 2
         ;;
       --out)
@@ -888,6 +901,28 @@ cmd_falsify() {
     [[ -n "$since" ]] || die "falsify: no defect matched the filter '$filter'"
     printf 'nothing to falsify: no defect names a file changed since %s — this is a filter, not a proof; run the full list on the default branch\n' "$since"
     return 0
+  fi
+
+  # --shard I/N takes every Nth defect, so N checkouts on N machines cover the list between
+  # them: the work is parallel and nothing inside this script is. Every Nth rather than a
+  # contiguous block, because the defects of one file sit together and share a build, so
+  # blocks would hand one shard all the slow ones and leave the rest waiting on it.
+  if [[ -n "$shard" ]]; then
+    local -a whole=("${selected[@]}")
+    local s
+    selected=()
+    for ((s = shard_i - 1; s < ${#whole[@]}; s += shard_n)); do
+      selected+=("${whole[$s]}")
+    done
+    # More shards than defects is a matrix wider than the list, not a mistake worth failing
+    # a run over — but it is said out loud, because a shard that silently ran nothing looks
+    # exactly like a shard where everything was caught
+    if ((${#selected[@]} == 0)); then
+      printf 'nothing to falsify: shard %s of a list holding %s defect(s) — the matrix is wider than the list\n' "$shard" "${#whole[@]}"
+      return 0
+    fi
+    printf 'shard %s: %s of %s defect(s); the other shards carry the rest, and each has its own summary and exit code\n' \
+      "$shard" "${#selected[@]}" "${#whole[@]}"
   fi
 
   # --worktree edits a checkout of HEAD in a git worktree rather than the files in front
@@ -1434,7 +1469,7 @@ help_bisect_probe() { help_bisect; }
 
 help_falsify() {
   cat <<'EOF'
-t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--since REF] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
+t.sh falsify [-d FILE] [-b BUILD] [--timeout SECONDS] [--out DIR] [--since REF] [--shard I/N] [--worktree] [--any-file] [-l DIR] [-m SET] [-p PATTERN] [-t N] [FILTER] -- CMD...
 
 Breaks one guard at a time, as written by hand in FILE (default tests/defects.sh, see
 templates/defects.sh), and requires the suite to notice. FILTER runs only the defects
@@ -1449,6 +1484,10 @@ whose name contains it. Nothing is generated, and the defect list is sourced: it
                       verdict, a log per defect, results.json, written as the run goes
   --since REF         only the defects in files changed since REF — a filter for a pull
                       request, not a proof; an empty selection is said out loud, exit 0
+  --shard I/N         run every Nth defect, starting at the Ith: N checkouts cover the list
+                      between them, each with its own summary and exit code, and the run is
+                      parallel without anything here being concurrent. One checkout per
+                      shard — two shards sharing a tree would meet each other's mutants
   --worktree          edit a checkout of HEAD in a git worktree instead of the files in
                       front of you, so an editor, a watcher or a commit cannot meet a mutant
   --any-file          allow a defect in a test, vendored or generated file, which is
