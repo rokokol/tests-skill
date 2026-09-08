@@ -380,6 +380,18 @@ JS
     run "$work/nd.healthy" vitest_ run good
     check_healthy "$work/nd.healthy" "$?"
 
+    # A second healthy run, with a snapshot that matches. The marker for an unchecked
+    # snapshot is `obsolete,` from the totals line, and its safety rests on jest omitting a
+    # category whose count is zero — `Snapshots: 1 passed, 1 total`, never `0 obsolete`.
+    # jest promises that nowhere, so the day it changes this run reddens and says so, which
+    # is the difference between this marker and the one in markers/rust.txt that spent a
+    # long time reddening every healthy cargo test with nothing watching it.
+    mkdir -p "$d/snapok"
+    printf 'test("a snapshot that matches", () => { expect({a:1}).toMatchSnapshot(); });\n' >"$d/snapok/s.test.js"
+    run "$work/nd.snapwrite" jest_ snapok
+    run "$work/nd.healthy2" jest_ snapok
+    check_healthy "$work/nd.healthy2" "$?"
+
     run "$work/nd.empty" vitest_ run empty
     declare_situation honest "vitest pointed at a directory with no test file" "$?" "$work/nd.empty"
 
