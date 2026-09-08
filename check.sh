@@ -990,17 +990,21 @@ check_proofs() {
       cp -p "$f" "$dest/$f"
     done
   }
-  nested() { (cd "$1" && T_CHECK_NESTED=1 "$BASH" ./check.sh "$mode" >/dev/null 2>&1); }
+  # A copy is run for the half its defect belongs to, not for the mode this run was given.
+  # A lint defect proven by a behaviour run is proven by whatever that half happened to do,
+  # and under `all` every copy was paying for both halves: 93% of a ten-minute gate was the
+  # copies, and half of that was the half the defect had nothing to do with.
+  nested() { (cd "$1" && T_CHECK_NESTED=1 "$BASH" ./check.sh "${2:-$mode}" >/dev/null 2>&1); }
 
   # A planted defect must make the copy fail FOR ITS OWN REASON. Asserting only that the
   # copy failed lets one broken check take credit for another's proof — which is how the
   # duplicate-marker rule sat here unproven, its copy failing on the dead-entry rule
   # instead.
-  catches() { # catches DIR EXPECTED-FRAGMENT DESCRIPTION
-    local dir="$1" want="$2" what="$3" out
+  catches() { # catches DIR EXPECTED-FRAGMENT DESCRIPTION HALF
+    local dir="$1" want="$2" what="$3" half="$4" out
     # stderr only: every refusal goes there, and the family's gates print their own
     # "all clear" lines to stdout under the same check-skill:/check-pins: prefix
-    out=$( (cd "$dir" && T_CHECK_NESTED=1 "$BASH" ./check.sh "$mode" 2>&1 >/dev/null) || :)
+    out=$( (cd "$dir" && T_CHECK_NESTED=1 "$BASH" ./check.sh "$half" 2>&1 >/dev/null) || :)
     local line
     line=$(grep -m 1 -E '^check(-skill|-pins)?:' <<<"$out" || :)
     [[ -n "$line" ]] || fail "$what: the copy did not fail at all"
@@ -1063,7 +1067,7 @@ check_proofs() {
       *) fail "plant: no such mutator '$how'" ;;
     esac
     [[ ! -x "$file" || ! -e "$dir/$file" ]] || chmod +x "$dir/$file"
-    catches "$dir" "$want" "$what"
+    catches "$dir" "$want" "$what" "$half"
     planted=$((planted + 1))
   }
 
@@ -1222,7 +1226,7 @@ check_proofs() {
     # In other letters and with a suffix, which an exact comparison would have let through
     printf 'No Tests Ran in 0.01s\n' >>"$work/plant-dupe/markers/go.txt"
     printf 'No Tests Ran in 0.01s\n' >>"$work/plant-dupe/tests/fixtures/lying/go.log"
-    catches "$work/plant-dupe" "repeats a marker that markers/default.txt" "a set repeating a default marker"
+    catches "$work/plant-dupe" "repeats a marker that markers/default.txt" "a set repeating a default marker" lint
     planted=$((planted + 1))
 
     # A default marker quiet on the pytest run and loud on the ctest one: the rule has to
@@ -1231,7 +1235,7 @@ check_proofs() {
     copy "$work/plant-noisy-elsewhere"
     printf 'Total Test time\n' >>"$work/plant-noisy-elsewhere/markers/default.txt"
     printf 'Total Test time (real) =   0.00 sec\n' >>"$work/plant-noisy-elsewhere/tests/fixtures/lying/default.log"
-    catches "$work/plant-noisy-elsewhere" "fires on tests/fixtures/clean/cpp.log" "a default marker that fires on another ecosystem's healthy run"
+    catches "$work/plant-noisy-elsewhere" "fires on tests/fixtures/clean/cpp.log" "a default marker that fires on another ecosystem's healthy run" lint
     planted=$((planted + 1))
   fi
 
