@@ -710,6 +710,27 @@ POLLUTE
   [[ "$(git -C "$stuck" rev-parse --abbrev-ref HEAD)" == master ]] ||
     fail "an inconclusive bisect left the repository detached"
 
+  echo "== bisect refuses a HEAD that passes, instead of naming it"
+  # A search whose premises do not hold answers the wrong question with confidence: told
+  # HEAD is bad when it is not, git visits commits that all pass, marks each good, converges
+  # on HEAD and names it — which this printed, with exit 0, until the premise was measured
+  fine="$work/bisect-fine"
+  mkdir -p "$fine"
+  git -C "$fine" init -q -b master
+  git -C "$fine" config user.name check
+  git -C "$fine" config user.email check@example.invalid
+  for n in 1 2 3 4; do
+    printf 'commit %s\n' "$n" >"$fine/note"
+    git -C "$fine" add -A && git -C "$fine" commit -q -m "commit $n, and it passes"
+  done
+  fine_good=$(git -C "$fine" rev-parse HEAD~3)
+  status=0
+  fine_out=$(cd "$fine" && tsh bisect "$fine_good" -- true 2>&1) || status=$?
+  ((status == 85)) || fail "bisect exited $status over a history where every commit passes (want 85):"$'\n'"$fine_out"
+  grep -q 'HEAD passes' <<<"$fine_out" || fail "bisect did not say HEAD passes:"$'\n'"$fine_out"
+  [[ "$(git -C "$fine" rev-parse --abbrev-ref HEAD)" == master ]] ||
+    fail "a refused bisect left the repository detached"
+
   echo "== bisect refuses to start over a bisect already in progress"
   # git bisect start resets an in-progress bisect without a word
   git -C "$repo" bisect start >/dev/null
@@ -1518,6 +1539,8 @@ check_proofs() {
     # guard this harness exists to refuse — so the emptied pattern list has to be fatal
     # Both premises, because a search that skips them answers the wrong question with
     # confidence: a victim already broken would have its first candidate named as the cause
+    plant behaviour unbisected "over a history where every commit passes" "a bisect that takes HEAD being bad on trust" \
+      sed t.sh 's/^  ((head_verdict != 0)) || {$/  ((head_verdict != 999)) || {/' '((head_verdict != 999)) || {'
     plant behaviour unpremised "on a victim that fails by itself" "a pollute that never checks the victim passes alone" \
       sed t.sh 's/^  ((st == 0)) || {$/  true || {/' 'true || {'
     plant behaviour halfblind "exited 0 where two tests" "a pollute that names a single test for a pollution needing two" \
@@ -1613,8 +1636,8 @@ check_proofs() {
   # unnoticed. These are the counts with that block skipped.
   case "$mode" in
     lint) want_planted=21 ;;
-    behaviour) want_planted=39 ;;
-    all) want_planted=60 ;;
+    behaviour) want_planted=40 ;;
+    all) want_planted=61 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

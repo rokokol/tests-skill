@@ -815,6 +815,28 @@ cmd_bisect() {
   # artifact from which a wrong answer can be corrected — edit it, `git bisect replay`.
   trap 'git bisect log >"$BISECT_LOGDIR/bisect.log" 2>/dev/null; git bisect reset >/dev/null 2>&1 || :' EXIT
 
+  # A search whose premises do not hold answers the wrong question with confidence. Told
+  # that HEAD is bad when it is not, git visits commits that all pass, marks each of them
+  # good, converges on HEAD and names it: measured on a history where every commit passed,
+  # this printed "first bad commit is <HEAD>" and exited 0. The probe git is about to run
+  # is what asks, so the premise is measured by the same machinery as the search.
+  #
+  # The other end is deliberately not checked. Running the suite at GOOD needs a checkout,
+  # which is the thing --no-checkout exists to avoid, and a worktree of that commit does
+  # not carry the untracked build output the working tree keeps — a false "GOOD is not
+  # good" would cost more than the check is worth.
+  # Only a HEAD that passes is refused. A HEAD the command cannot be run at is a different
+  # thing and not this one's business: git skips such a commit and searches on, and if every
+  # commit between the ends is like that it says so — which is the 89 the stuck history is
+  # for. Refusing there as well was tried and the gate caught it.
+  local head_verdict=0
+  T_LOGDIR="$logdir" "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" >/dev/null 2>&1 || head_verdict=$?
+  ((head_verdict != 0)) || {
+    printf 't.sh: bisect: HEAD passes, so there is no first bad commit between %s and here — %s\n' \
+      "$good" "the search would visit commits that all pass and name HEAD" >&2
+    return 85
+  }
+
   git bisect start "${start_opts[@]+"${start_opts[@]}"}" >/dev/null || fatal "bisect: could not start"
   git bisect bad HEAD >/dev/null || fatal "bisect: could not mark HEAD bad"
   git bisect good "$good" >/dev/null || fatal "bisect: could not mark $good good"
@@ -1905,7 +1927,8 @@ error, pytest uses 2 to 5, cargo-nextest exits 4 for "no tests ran".
   79  CMD exited 0 but its log says it did not do what a pass claims (run)
   83  a defect SURVIVED (falsify); the tests pass without the fix, VACUOUS (prove)
   84  a defect, or the fix taken away, never let the suite finish (falsify, prove)
-  85  the suite was red, or never really ran, before any edit was made (falsify, prove)
+  85  the state the search assumes does not hold: the suite red or never really run
+      before any edit (falsify, prove), or HEAD passing (bisect)
   86  the runs disagreed with each other (flaky)
   87  the defect list has drifted, or a declared exception was disproved (falsify)
   88  a defect, or the fix taken away, only stopped the build (falsify, prove)
