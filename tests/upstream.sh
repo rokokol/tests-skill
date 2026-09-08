@@ -71,7 +71,7 @@ declare_situation() { # declare_situation KIND NAME STATUS OUTFILE [REASON]
   case "$kind" in
     lies)
       ((status == 0)) ||
-        note "$eco/$name is declared a lie but exited $status — the status already says so, so it is honest now"
+        note "$eco/$name is declared a lie but exited $status — the status already says so, so it is honest now$(why "$out")"
       local hit="" m
       while IFS= read -r m; do
         [[ -n "$m" ]] || continue
@@ -92,7 +92,7 @@ declare_situation() { # declare_situation KIND NAME STATUS OUTFILE [REASON]
       ;;
     silent)
       ((status == 0)) ||
-        note "$eco/$name is declared a silent lie but exited $status — the status says so now, so the note is stale: $reason"
+        note "$eco/$name is declared a silent lie but exited $status — the status says so now, so the note is stale: $reason$(why "$out")"
       local m2
       while IFS= read -r m2; do
         [[ -n "$m2" ]] || continue
@@ -110,7 +110,7 @@ declare_situation() { # declare_situation KIND NAME STATUS OUTFILE [REASON]
 # finding, about itself.
 check_healthy() { # check_healthy OUTFILE STATUS
   local out="$1" status="$2" m set
-  ((status == 0)) || note "$eco: the healthy run exited $status — the fixture project no longer passes"
+  ((status == 0)) || note "$eco: the healthy run exited $status — the fixture project no longer passes$(why "$out")"
   for set in markers/default.txt "markers/$eco.txt"; do
     [[ -f "$set" ]] || continue
     while IFS= read -r m; do
@@ -125,6 +125,23 @@ run() { # run OUTFILE CMD... -> writes the output, returns the command's status
   local out="$1"
   shift
   "$@" >"$out" 2>&1
+}
+
+# `nix shell` writes its download progress to the stream being captured, and on a machine
+# that already has the toolchain it writes nothing at all — so this passed here and failed
+# on the first runner it met, with "copying path ..." counted as the tool's own output. The
+# fetch happens once, before anything is measured, and its noise goes to the terminal.
+warm() { # warm NIX-ARGS...
+  printf '   fetching %s\n' "$*"
+  nix shell "$@" -c true ||
+    note "$eco: could not fetch $* — nothing measured below this line means anything"
+}
+
+# A run that failed where it was not supposed to has to say why. Capturing output and then
+# reporting only a status is the muted-stderr mistake this repository has a rule about: the
+# first CI failure of this script could not be diagnosed from its own log.
+why() { # why OUTFILE -> the tail of a captured run, for a message
+  printf '\n--- %s, last 20 lines ---\n%s' "$1" "$(tail -20 "$1")"
 }
 
 # Called once an ecosystem's situations have all run. A marker that matched none of them is
@@ -175,6 +192,7 @@ PHP
 use PHPUnit\Framework\TestCase;
 final class NoMethodsTest extends TestCase { public function helper(): void {} }
 PHP
+  warm nixpkgs#phpunit
   pu() { (cd "$d" && nix shell nixpkgs#phpunit -c phpunit --cache-directory .cache "$@"); }
 
   run "$work/php.healthy" pu tests
@@ -213,6 +231,7 @@ if wants dotnet; then
   d="$work/dn"
   mkdir -p "$d/home"
   export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+  warm nixpkgs#dotnet-sdk
   dn() { (cd "$d" && HOME="$d/home" nix shell nixpkgs#dotnet-sdk -c dotnet "$@"); }
   dn new xunit -o Demo >/dev/null 2>&1 ||
     note "dotnet: could not create the fixture project — the rest of this section says nothing"
@@ -286,6 +305,7 @@ class ClampTest {
     @Test void positiveIsKept() { assertEquals(7, Clamp.toZero(7)); }
 }
 JAVA
+  warm nixpkgs#maven nixpkgs#jdk
   mvn_() { (cd "$d" && nix shell nixpkgs#maven nixpkgs#jdk -c mvn -Dmaven.repo.local="$d/.m2" "$@"); }
 
   run "$work/jvm.healthy" mvn_ test
@@ -340,6 +360,7 @@ function clampToZero(n) { return n < 0 ? 0 : n; }
 test('a negative reading becomes zero', async () => { expect(clampToZero(-5)).toBe(0); });
 test('a positive reading is kept', async () => { expect(clampToZero(7)).toBe(7); });
 JS
+  warm nixpkgs#playwright-test
   pw() { (cd "$d" && nix shell nixpkgs#playwright-test -c playwright "$@"); }
 
   # There is no markers/playwright.txt, so `silent` is asserted against every other set:
