@@ -594,34 +594,50 @@ DEF_FIND=()
 DEF_REPLACE=()
 DEF_WHY=()
 DEF_EXPECT=()
+DEF_EXPECT_KIND=()
 
 # The one call a defects file makes. Sourced, so the file is plain bash and needs no parser.
 #
 #   defect NAME FILE FIND REPLACE CONSEQUENCE
 #   defect NAME FILE FIND REPLACE CONSEQUENCE expect survived REASON
+#   defect NAME FILE FIND REPLACE CONSEQUENCE expect caught FRAGMENT
 #
 # The second form declares a defect nothing can catch — an edit that changes the code
 # without changing what any caller can observe — with the reason written where the claim
 # is. It is reported as expected rather than as a survivor, and the day the suite does
 # catch it the expectation is stale and says so, so a declaration cannot outlive its truth.
-# Declared on the line rather than in a separate list of exceptions, the way Stryker and
-# cargo-mutants do it, because an exception kept elsewhere is an exception nobody rereads.
+#
+# The third names what should do the catching: a test name, an assertion message, whatever
+# the suite prints when that guard is the one that fails. "The suite went red" and "the
+# suite noticed this" are different claims, and a run where something else is failing
+# credits every defect to a suite that never saw them. Caught without FRAGMENT anywhere in
+# the run's output is stale, like a renamed test, because the entry no longer describes
+# what it is about.
+#
+# Both are declared on the line rather than in a separate list of exceptions, the way
+# Stryker and cargo-mutants do it, because an exception kept elsewhere is one nobody
+# rereads.
 defect() {
-  local expect=""
+  local expect="" expect_kind=""
   if (($# == 8)); then
-    [[ "$6" == expect && "$7" == survived && -n "$8" ]] ||
-      die "defects: after the consequence, the only words allowed are: expect survived REASON"
+    [[ "$6" == expect && -n "$8" ]] ||
+      die "defects: after the consequence, the only words allowed are: expect survived REASON, or expect caught FRAGMENT"
+    case "$7" in
+      survived | caught) expect_kind="$7" ;;
+      *) die "defects: after the consequence, the only words allowed are: expect survived REASON, or expect caught FRAGMENT" ;;
+    esac
     expect="$8"
     set -- "$1" "$2" "$3" "$4" "$5"
   fi
   (($# == 5)) ||
-    die "defects: defect takes 5 arguments (name file find replace consequence), or 8 with 'expect survived REASON', got $#"
+    die "defects: defect takes 5 arguments (name file find replace consequence), or 8 with 'expect survived REASON' or 'expect caught FRAGMENT', got $#"
   DEF_NAME+=("$1")
   DEF_FILE+=("$2")
   DEF_FIND+=("$3")
   DEF_REPLACE+=("$4")
   DEF_WHY+=("$5")
   DEF_EXPECT+=("$expect")
+  DEF_EXPECT_KIND+=("$expect_kind")
 }
 
 # Reads a file into the variable NAMED by $1, so putting it back is byte-for-byte rather
@@ -1029,7 +1045,7 @@ cmd_falsify() {
     *) fatal "falsify: the baseline run ended without a verdict — the harness could not run the suite (see $logdir)" ;;
   esac
 
-  local name file find replace why expect content mutated occurrences pristine line
+  local name file find replace why expect expect_kind content mutated occurrences pristine line
   local -a caught=() survived=() stale=() unusable=() timedout=() expected=() ran=()
   for i in "${selected[@]}"; do
     name="${DEF_NAME[$i]}"
@@ -1038,6 +1054,7 @@ cmd_falsify() {
     replace="${DEF_REPLACE[$i]}"
     why="${DEF_WHY[$i]}"
     expect="${DEF_EXPECT[$i]}"
+    expect_kind="${DEF_EXPECT_KIND[$i]}"
     ran+=("$name")
 
     original_of content "$file"
@@ -1071,11 +1088,17 @@ cmd_falsify() {
 
     # A declared exception: surviving is the expected outcome and no finding; being caught
     # means the declaration has outlived its truth, which is the list's fault, like stale
-    if [[ -n "$expect" ]]; then
+    if [[ "$expect_kind" == survived ]]; then
       case "$VERDICT" in
         survived) VERDICT=expected ;;
         caught) VERDICT=disproved ;;
       esac
+    elif [[ "$expect_kind" == caught && "$VERDICT" == caught ]]; then
+      # "The suite went red" and "the suite noticed this" are different claims, and only
+      # the second is worth anything: a run where something else is failing credits every
+      # defect to a suite that never saw them. An entry that names what should do the
+      # catching is held to it, and a name that no longer appears is the list drifting.
+      grep -qF -- "$expect" "$out/logs/$(log_name "$name").log" || VERDICT=misattributed
     fi
 
     case "$VERDICT" in
@@ -1090,6 +1113,15 @@ cmd_falsify() {
       disproved)
         printf 'stale     %s: declared as one nothing can catch, and the suite caught it — drop the expectation\n' "$name"
         annotate warning "$file" "$line" "stale $name: declared as one nothing can catch, and the suite caught it"
+        stale+=("$name")
+        VERDICT=stale
+        ;;
+      misattributed)
+        # Not caught: the suite went red without the named guard being anywhere in its
+        # output, so this run says nothing about the guard the entry is written for. The
+        # list's fault either way — a renamed test, or a claim that was never true
+        printf 'stale     %s: the suite went red, but nothing in its output mentions %s — this run credits it to a guard that did not do the catching\n' "$name" "$expect"
+        annotate warning "$file" "$line" "stale $name: red, but not by $expect"
         stale+=("$name")
         VERDICT=stale
         ;;
@@ -1496,6 +1528,11 @@ whose name contains it. Nothing is generated, and the defect list is sourced: it
 Verdicts: caught, SURVIVED with the file, the line and the edit, expected (declared with
 `expect survived REASON`), stale, unusable, TIMEDOUT. On a GitHub runner each finding is
 also an annotation on its file and line.
+
+A defect list entry may end with `expect survived REASON`, for an edit nothing can
+observe, or `expect caught FRAGMENT`, naming what should do the catching — a test name or
+an assertion message. Caught while FRAGMENT is nowhere in that run's output is stale: the
+suite went red without the named guard being involved, so the run says nothing about it.
 
 Exit: 0 all caught; 83 a survivor; 84 a timeout; 85 the suite red or never really run
 before any edit; 87 the list drifted, or a declared exception was disproved; 88 an edit

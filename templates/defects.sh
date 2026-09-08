@@ -8,6 +8,7 @@
 #
 #   defect NAME FILE FIND REPLACE CONSEQUENCE
 #   defect NAME FILE FIND REPLACE CONSEQUENCE expect survived REASON
+#   defect NAME FILE FIND REPLACE CONSEQUENCE expect caught FRAGMENT
 #
 # NAME         short, groupable — `t.sh falsify escape -- ...` runs every name containing
 #              "escape"
@@ -26,6 +27,12 @@
 #              changing anything a caller can observe — with the reason where the claim
 #              is. It is reported `expected` rather than SURVIVED, and the day the suite
 #              does catch it the declaration is `stale`, so it cannot outlive its truth
+# expect caught FRAGMENT
+#              names what should do the catching: a test name, an assertion message,
+#              whatever the suite prints when that guard is the one that fails. "The suite
+#              went red" and "the suite noticed this" are different claims, and one flaky
+#              test failing through a whole run credits every defect to a suite that saw
+#              none of them. Caught with FRAGMENT nowhere in that run's output is `stale`
 #
 # WHICH DEFECTS TO WRITE, in order of what they find:
 #

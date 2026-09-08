@@ -909,10 +909,25 @@ DEFECTS
   fal_out=$(cd "$fal" && tsh falsify -d tests/expected-wrong.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh 2>&1) || status=$?
   ((status == 87)) || fail "a declaration the suite disproved was not reported stale (got $status, want 87):"$'\n'"$fal_out"
   grep -q '^stale     clamp/negative: declared as one nothing can catch' <<<"$fal_out" || fail "falsify did not say the expectation was disproved:"$'\n'"$fal_out"
-  printf "defect 'x/y' 'impl.sh' 'a' 'b' 'c' expect caught 'z'\n" >"$fal/tests/expected-bad.sh"
+  printf "defect 'x/y' 'impl.sh' 'a' 'b' 'c' expect exploded 'z'\n" >"$fal/tests/expected-bad.sh"
   status=0
   (cd "$fal" && tsh falsify -d tests/expected-bad.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh) >/dev/null 2>&1 || status=$?
-  ((status == 64)) || fail "falsify accepted 'expect caught', which is not a thing (got $status)"
+  ((status == 64)) || fail "falsify accepted an expectation it has no meaning for (got $status)"
+  # `expect caught FRAGMENT` holds a caught to more than the suite having gone red: the
+  # run's own output has to name the guard the entry is about. The fixture's suite prints
+  # a distinct line per assertion, so an entry naming the wrong one is caught by something
+  # else — which is the shape a flaky test failing through a whole run produces
+  printf "defect 'clamp/negative' 'impl.sh' 'if [ \"\$1\" -lt 0 ]' 'if false' 'negatives leak' expect caught 'clamp let a negative through'\n" >"$fal/tests/expected-by.sh"
+  status=0
+  fal_out=$(cd "$fal" && tsh falsify -d tests/expected-by.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "a defect caught by the guard it names was not reported caught (got $status):"$'\n'"$fal_out"
+  grep -q '^caught    clamp/negative' <<<"$fal_out" || fail "falsify did not report the named guard as the catcher:"$'\n'"$fal_out"
+  printf "defect 'clamp/negative' 'impl.sh' 'if [ \"\$1\" -lt 0 ]' 'if false' 'negatives leak' expect caught 'a message this suite never prints'\n" >"$fal/tests/expected-by-wrong.sh"
+  status=0
+  fal_out=$(cd "$fal" && tsh falsify -d tests/expected-by-wrong.sh -l "$work/logs" --out "$work/fo3" -- sh suite.sh 2>&1) || status=$?
+  ((status == 87)) || fail "a defect caught by something other than the guard it names was still called caught (got $status, want 87):"$'\n'"$fal_out"
+  grep -q '^stale     clamp/negative: the suite went red, but nothing in its output mentions' <<<"$fal_out" ||
+    fail "falsify did not say the run credited the defect to a guard that did not catch it:"$'\n'"$fal_out"
   # The template is the thing people copy, so every form it shows has to parse: falsify
   # must get as far as the files it names, which this fixture does not have
   status=0
@@ -1322,6 +1337,10 @@ check_proofs() {
     # stripping INT alone leaves EXIT to put the file back and the copy passes.
     plant behaviour unrestored "did not put impl.sh back" "a falsify that does not restore the source it was interrupted over" \
       sed t.sh "/^  trap /s/restore_all; //" "trap 'cleanup_worktree' EXIT"
+    # The grep is the whole of `expect caught`: without it every red run is a catch, which
+    # is the claim the clause exists to stop being made
+    plant behaviour miscredited "was still called caught" "a falsify that credits a red run to a guard that did not catch" \
+      sed t.sh 's@^      grep -qF -- "$expect" .*VERDICT=misattributed$@      : # planted@' '# planted'
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
     plant behaviour vacuous "want proven" "a prove that never takes the fix away" \
@@ -1341,7 +1360,7 @@ check_proofs() {
     plant behaviour unannotated "did not annotate the survivor" "a falsify that keeps its findings out of the diff" \
       sed t.sh 's/^        annotate error "\$file" "\$line" "SURVIVED \$name: \$why"$/        : # planted/' '# planted'
     plant behaviour unexpected "was reported as a survivor" "a falsify that ignores a declared exception" \
-      sed t.sh 's/^    if \[\[ -n "\$expect" \]\]; then$/    if false; then # planted/' '# planted'
+      sed t.sh 's/^    if \[\[ "\$expect_kind" == survived \]\]; then$/    if false; then # planted/' '# planted'
     plant behaviour nowhere "where the edit is" "a falsify that names a survivor without its line" \
       drop t.sh '  - %s\n'
     plant behaviour anyfile "aimed at a test file" "a falsify that edits test files" \
@@ -1425,8 +1444,8 @@ check_proofs() {
   # unnoticed. These are the counts with that block skipped.
   case "$mode" in
     lint) want_planted=21 ;;
-    behaviour) want_planted=32 ;;
-    all) want_planted=53 ;;
+    behaviour) want_planted=33 ;;
+    all) want_planted=54 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
