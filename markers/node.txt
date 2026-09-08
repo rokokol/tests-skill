@@ -13,7 +13,7 @@ Test suite failed to run
 # the expectation was regenerated instead of checked
 snapshot written
 snapshots written
-snapshot obsolete
+obsolete,
 
 # the run was silently reduced to one test
 

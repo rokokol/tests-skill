@@ -25,7 +25,7 @@ These ship as `markers/node.txt`, opted into with `t.sh run -m node -- npx vites
 | `Test suite failed to run` | the file never executed; its tests are absent, not passing |
 | `A worker process has failed to exit gracefully` | something is still running; state leaks into the next run |
 | `Jest did not exit one second after` | a handle nobody closed; the run does not end, and in CI that is the job timeout |
-| `snapshot obsolete` | a stored expectation nothing compares against any more |
+| `obsolete,` | a stored expectation nothing compares against any more, from the `Snapshots:` totals line |
 
 A committed `.only` is not among them, and cannot be: see [below](#a-forgotten-only-is-not-in-the-log)
 
