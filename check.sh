@@ -1011,15 +1011,21 @@ DEFECTS
   # So the signal arrived during the baseline every time, and the two restore assertions
   # below asserted that a pristine file was pristine. Waiting for the marker is the moment
   # itself rather than a guess about how busy the machine is.
+  # Waited on the mutant itself and not on the marker that announces it. falsify names the
+  # defect in flight and *then* writes the file, so between those two lines there is a
+  # window where the marker is there and the source is still pristine. Small enough to be
+  # invisible here and in a container, wide enough for a macOS runner to land in it, which
+  # is where this was found. The precondition is a mutant on disk, so that is what is
+  # waited for; the marker is then checked as a claim about it.
   waited=0
-  while [[ ! -s "$flight" ]] && kill -0 "$falsify_pid" 2>/dev/null && ((waited < 400)); do
+  while cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" && kill -0 "$falsify_pid" 2>/dev/null && ((waited < 400)); do
     sleep 0.05
     waited=$((waited + 1))
   done
-  [[ -s "$flight" ]] ||
-    fail "falsify never named a defect in flight — the interrupt below would have had nothing to land on"
   ! cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
-    fail "falsify says a defect is in flight while impl.sh is untouched — the restore checked below would be vacuous"
+    fail "falsify never put a mutant on disk — the interrupt below would have had nothing to land on"
+  [[ -s "$flight" ]] ||
+    fail "a mutant is on disk and falsify did not name the defect in flight"
   kill -INT "$falsify_pid"
   status=0
   wait "$falsify_pid" || status=$?
