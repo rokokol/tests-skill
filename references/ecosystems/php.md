@@ -37,6 +37,11 @@ t.sh run -- vendor/bin/phpunit --fail-on-empty-test-suite --fail-on-risky --fail
 
 PHP is forgiving enough that most useful edits stay valid: `if (...)` to `if (false)`, `>=` widened to `>`, a `return` replaced by `return null`, an `array_filter` dropped, a `throw` turned into a `return`. Pair it with `-b 'find src -name "*.php" -exec php -l {} +'` so an edit that breaks the syntax is reported `unusable` instead of being credited to the suite. Infection is the generated-mutant tool here; note that it counts a mutant that errors as killed, which is the opposite of what `falsify` does with `unusable`, and read its score accordingly
 
-## Capturing a healthy run for a marker set
+## The marker set
 
-No `markers/php.txt` ships yet, because a marker needs a real line from a real run. The recipe: run `vendor/bin/phpunit` on a project with at least one test per suite and keep the whole output as `tests/fixtures/clean/php.log`; collect the lying lines you have actually seen — `No tests executed!`, `OK, but there were issues!` — into `tests/fixtures/lying/php.log`; write `markers/php.txt` with one line per lie. The gate requires every marker to match the lying fixture and to stay quiet on the healthy one
+`markers/php.txt`, opted into with `-m php`, is deliberately short. PHPUnit 13 is honest with its exit status about most of what can go wrong — a missing bootstrap is 2, a path that does not exist is 2, a filter matching nothing is 1, a class with no test methods is 1 — and a marker for any of those would be a second opinion nobody needs. Two shapes exit 0, both captured from a real PHPUnit 13.3.2 run:
+
+- `No tests executed!` — pointed at a directory holding no test file at all
+- `Assertions: 0` — a run in which every test was skipped: it reports OK, exits 0 and verified nothing
+
+The second is worth reading twice, because the obvious marker is the wrong one. `OK, but some tests were skipped!` is the line that names the situation, and a healthy suite prints it the moment one test is platform-specific. A marker on that would redden honest runs, and a marker that cries wolf gets the whole check switched off within a day, which protects nothing. The count is the part that only a run verifying nothing produces

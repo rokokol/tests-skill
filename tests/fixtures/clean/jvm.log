@@ -1,0 +1,16 @@
+A healthy `mvn test` on a module whose test class runs, captured from a real Maven 3.9.16 run with surefire 3.5.2 on OpenJDK 21. No entry in markers/jvm.txt may match anything here.
+
+[INFO] --- surefire:3.5.2:test (default-test) @ demo ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running demo.ClampTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.024 s -- in demo.ClampTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] BUILD SUCCESS

@@ -40,6 +40,11 @@ The last two are test-shape lies rather than runner lies. A unit test boots no a
 
 The compiler rejects most careless edits, so `-b` is mandatory: `-b './gradlew compileJava compileTestJava -q'` or `-b './mvnw -q compile test-compile'`, otherwise every edit the compiler rejects is credited to the suite. Edits that stay compilable: a `>=` widened to `>`, an `if (condition)` made `if (true)`, a `throw` replaced by a `return`, an `Optional.of(x)` by `Optional.empty()`, a stream `.filter(...)` dropped, a method body replaced by `return null` where the type allows it. Java's checked exceptions and unused-variable warnings under `-Werror` turn some edits `unusable`; that is a measurement of the edit, not of the suite
 
-## Capturing a healthy run for a marker set
+## The marker set
 
-A marker set ships only with a real line from a real run behind it, so there is none for the JVM until somebody keeps one. The recipe: run `./gradlew test` on a module where every source set has at least one test and save the whole output as `tests/fixtures/clean/jvm.log`; collect the lying lines you have actually seen — `No tests to run.`, `Tests run: 0` — from real logs into `tests/fixtures/lying/jvm.log`; write `markers/jvm.txt` with one line per lie. The gate then requires every marker to match the lying fixture and to stay quiet on the healthy one, and `-m jvm` does the rest
+`markers/jvm.txt`, opted into with `-m jvm`, carries two lines, both captured from a real `mvn test` on Maven 3.9.16 with surefire 3.5.2 that printed BUILD SUCCESS and exited 0:
+
+- `Tests run: 0` — a test class was found and nothing in it ran. In a multi-module build this is one module reporting on itself, so read the module name beside it
+- `Tests are skipped.` — `-DskipTests` or `-Dmaven.test.skip` left in a command line, a profile or a CI variable. The build compiles the tests and runs none of them
+
+And one that cannot be there, which is the more useful half: **a module with no test class at all prints nothing**. Not a count, not "no tests to run", nothing — surefire emits its plugin header and the build succeeds. There is no line to match, so no marker can cover it, and `failIfNoTests` is the only guard. A marker set cannot see what the tool does not say, which is exactly why the native switch above comes first and the markers second

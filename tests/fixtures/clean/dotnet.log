@@ -1,0 +1,10 @@
+A healthy `dotnet test` on an xunit project where the tests run, captured from a real .NET SDK 8.0.424 run with VSTest 17.11.1. Paths are the fixture project's. No entry in markers/dotnet.txt may match anything here.
+
+  Demo -> /src/Demo/bin/Debug/net8.0/Demo.dll
+Test run for /src/Demo/bin/Debug/net8.0/Demo.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: < 1 ms - Demo.dll (net8.0)

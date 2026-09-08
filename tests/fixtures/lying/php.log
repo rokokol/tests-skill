@@ -1,0 +1,12 @@
+A log carrying one realistic line per entry in markers/php.txt. Both were produced by a real PHPUnit 13.3.2 that exited 0.
+
+PHPUnit 13.3.2 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.25
+
+No tests executed!
+
+Time: 00:00, Memory: 18.00 MB
+
+OK, but some tests were skipped!
+Tests: 2, Assertions: 0, Skipped: 2.

@@ -1,0 +1,11 @@
+A healthy `phpunit tests` on a suite where every test runs and asserts, captured from a real PHPUnit 13.3.2 run on PHP 8.4.25. No entry in markers/php.txt may match anything here.
+
+PHPUnit 13.3.2 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.25
+
+..                                                                  2 / 2 (100%)
+
+Time: 00:00, Memory: 18.00 MB
+
+OK (2 tests, 2 assertions)

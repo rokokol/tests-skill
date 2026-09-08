@@ -40,6 +40,14 @@ Two rules make most of that table go away. **Web-first assertions**: `await expe
 
 The tests here are the slow layer, so a defect list for them is short and aimed at the behaviours only a browser can prove: a guard in the front end that hides an action, a redirect after a submit, a field's validation. The edits go in the application's source, never in the page objects or fixtures, which `falsify` refuses as test files. `-b 'npx tsc --noEmit'` for a TypeScript application, so an edit the type checker rejects is `unusable` rather than credited. A defect that survives here usually means the assertion was `toBeVisible()` on something that was visible either way; the fix is an assertion on the outcome, not on the presence of a widget
 
-## Capturing a healthy run for a marker set
+## There is no marker set, and that is the finding
 
-No `markers/playwright.txt` ships yet, because a marker needs a real line from a real run. The recipe: run `npx playwright test` on a project with one passing test and keep the whole output as `tests/fixtures/clean/playwright.log`; collect the lying lines you have actually seen — a summary with `flaky` in it, a `test.only` in a stack trace — into `tests/fixtures/lying/playwright.log`; write `markers/playwright.txt` with one line per lie. The gate requires every marker to match the lying fixture and to stay quiet on the healthy one
+No `markers/playwright.txt` ships, and not for want of looking. Playwright 1.61 was run through every shape that exits 0 while answering about less than it appears to, and none of them leaves a line a marker could match:
+
+- **`--pass-with-no-tests`, with nothing to run.** Output is empty. Not a warning, not a summary — nothing at all, and exit 0. There is no text to match, because there is no text
+- **A `test.only` left in a file.** The run prints `Running 1 test` and `1 passed`, exits 0, and says nothing whatever about the tests it dropped. Both lines are what a genuinely one-test run prints
+- **Every test skipped.** `2 skipped`, exit 0. The only line that names it is the skip count, and a healthy suite skips tests for a browser it does not have on this runner — a marker there would cry wolf
+
+What does go red on its own is worth knowing: a `--grep` that matches nothing is `Error: No tests found` and exit 1, without any flag being set
+
+So the guards here are the config and not the log. `forbidOnly: true` turns a stray `test.only` into a failure, and it is the single most valuable line in a Playwright config. Never pass `--pass-with-no-tests` in CI: it exists to make a pipeline green and does exactly that. This is the shape of ecosystem the marker idea does not reach, and saying so is more use than an invented set

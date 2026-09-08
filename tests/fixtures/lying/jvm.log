@@ -1,0 +1,9 @@
+A log carrying one realistic line per entry in markers/jvm.txt. Both were produced by a real `mvn test` that printed BUILD SUCCESS and exited 0.
+
+[INFO] --- surefire:3.5.2:test (default-test) @ demo ---
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+[INFO] --- surefire:3.5.2:test (default-test) @ demo ---
+[INFO] Tests are skipped.
+[INFO] BUILD SUCCESS

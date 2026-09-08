@@ -37,6 +37,11 @@ Which runner is underneath decides what "nothing ran" does. With VSTest, the run
 
 `-b 'dotnet build --no-restore'` is mandatory, because C# rejects most careless edits and an edit the compiler rejects looks exactly like a defect the tests caught. Edits that stay compilable: `>=` to `>`, `if (x is null)` to `if (false)`, a `throw` replaced by `return default`, a `.Where(...)` dropped, a method body replaced by `return default!`, a `?? fallback` removed. Nullable warnings under `-warnaserror` make some of these `unusable` rather than a measurement
 
-## Capturing a healthy run for a marker set
+## The marker set
 
-No `markers/dotnet.txt` ships yet, because a marker needs a real line from a real run. The recipe: run `dotnet test` on a solution where every test project has at least one test and keep the whole output as `tests/fixtures/clean/dotnet.log`; collect the lying lines you have actually seen — `No test is available in`, a `Skipped` count that grew — into `tests/fixtures/lying/dotnet.log`; write `markers/dotnet.txt` with one line per lie. The gate requires every marker to match the lying fixture and to stay quiet on the healthy one
+`markers/dotnet.txt`, opted into with `-m dotnet`, carries two lines, both captured from a real `dotnet test` on .NET SDK 8.0.424 with VSTest 17.11.1 that exited 0:
+
+- `No test matches the given testcase filter` — a `--filter` that matched nothing. Not one test ran and the status says success
+- `No test is available in` — the assembly held no test the adapter could see: a missing adapter package, a framework mismatch, a project that is not a test project
+
+This is the ecosystem where the idea is clearest. Both are ordinary CI shapes, both exit 0, and a wrapper reading only the status calls each of them a pass. `dotnet test` has no native switch that turns either into a failure, which is why the marker set carries the weight here rather than a flag

@@ -1,0 +1,8 @@
+A log carrying one realistic line per entry in markers/dotnet.txt. Both were produced by a real `dotnet test` that exited 0.
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+
+No test matches the given testcase filter `FullyQualifiedName~NoSuchTest` in /src/Demo/bin/Debug/net8.0/Demo.dll
+
+No test is available in /src/NoTests/bin/Debug/net8.0/Demo.dll. Make sure that test discoverer & executors are registered and platform & framework version settings are appropriate and try again.
