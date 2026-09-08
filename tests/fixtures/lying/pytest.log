@@ -1,6 +1,6 @@
 A log carrying one realistic line per entry in markers/pytest.txt.
 
-!!!!!!!!!!!!!!!!!!! Interrupted: 1 errors during collection !!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
 ERROR collecting tests/test_sync.py
 XFAIL tests/test_api.py::test_retry - known upstream bug
 XPASS tests/test_api.py::test_backoff - xfailed
