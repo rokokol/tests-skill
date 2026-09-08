@@ -68,37 +68,37 @@ markers_of() { # markers_of NAME
 # nothing a marker could match, which is a finding rather than a gap.
 declare_situation() { # declare_situation KIND NAME STATUS OUTFILE [REASON]
   local kind="$1" name="$2" status="$3" out="$4" reason="${5:-}"
+
+  # Every situation records which markers matched it, whatever its kind. A marker exists to
+  # be found in a log, and plenty of them name something the tool is honest about — a panic,
+  # a build failure, a collection error — because the status can still be swallowed by a
+  # pipe, a wrapper or a `|| true`. Recording matches only for the situations that exit 0
+  # would report those markers as dead, which is the opposite of true.
+  local m hit=""
+  while IFS= read -r m; do
+    [[ -n "$m" ]] || continue
+    grep -qiF -- "$m" "$out" && {
+      hit="$m"
+      printf '%s\n' "$m" >>"$work/$eco.seen"
+    }
+  done < <(markers_of "$eco")
+
   case "$kind" in
     lies)
       ((status == 0)) ||
         note "$eco/$name is declared a lie but exited $status — the status already says so, so it is honest now$(why "$out")"
-      local hit="" m
-      while IFS= read -r m; do
-        [[ -n "$m" ]] || continue
-        # Recorded, not just counted: a marker that matched nothing across every situation
-        # of its ecosystem has died quietly, and a live neighbour would otherwise cover for
-        # it. That is checked once per ecosystem, by every_marker_still_matches below
-        grep -qiF -- "$m" "$out" && {
-          hit="$m"
-          printf '%s\n' "$m" >>"$work/$eco.seen"
-        }
-      done < <(markers_of "$eco")
       [[ -n "$hit" ]] ||
         note "$eco/$name exits 0 and no marker in markers/$eco.txt matches its output — either the line was renamed upstream or this is a lie nobody covers yet"
       ;;
     honest)
       ((status != 0)) ||
-        note "$eco/$name was declared honest and exited 0 — the tool stopped refusing, and it needs a marker now"
+        note "$eco/$name was declared honest and exited 0 — the tool stopped refusing, and it needs a marker now$(why "$out")"
       ;;
     silent)
       ((status == 0)) ||
         note "$eco/$name is declared a silent lie but exited $status — the status says so now, so the note is stale: $reason$(why "$out")"
-      local m2
-      while IFS= read -r m2; do
-        [[ -n "$m2" ]] || continue
-        ! grep -qiF -- "$m2" "$out" ||
-          note "$eco/$name is declared unmatchable, and the marker '$m2' matches it — the tool started saying something, so drop the declaration"
-      done < <(markers_of "$eco")
+      [[ -z "$hit" ]] ||
+        note "$eco/$name is declared unmatchable, and the marker '$hit' matches it — the tool started saying something, so drop the declaration"
       ;;
   esac
 }
@@ -344,6 +344,72 @@ JAVA
       printf 'A log carrying one realistic line per entry in markers/jvm.txt, captured from real runs that printed BUILD SUCCESS and exited 0.\n\n'
       grep -E 'Tests run: 0|Tests are skipped|BUILD SUCCESS|surefire' "$work/jvm.zero" "$work/jvm.skip" | sed 's/^[^:]*://'
     } >tests/fixtures/lying/jvm.log
+  fi
+fi
+
+# ---------------------------------------------------------------- rust
+
+if wants rust; then
+  eco=rust
+  echo "== rust: cargo test"
+  warm nixpkgs#cargo nixpkgs#rustc
+  d="$work/rs"
+  mkdir -p "$d/src"
+  cat >"$d/Cargo.toml" <<'TOML'
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+TOML
+  cat >"$d/src/lib.rs" <<'RS'
+/// Clamps a reading to zero.
+///
+/// ```
+/// assert_eq!(demo::to_zero(-5), 0);
+/// ```
+pub fn to_zero(n: i32) -> i32 { if n < 0 { 0 } else { n } }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn negative_becomes_zero() { assert_eq!(super::to_zero(-5), 0); }
+}
+RS
+  cg() { (cd "$d" && CARGO_HOME="$d/.cargo" nix shell nixpkgs#cargo nixpkgs#rustc -c cargo "$@"); }
+
+  run "$work/rs.healthy" cg test
+  check_healthy "$work/rs.healthy" "$?"
+
+  # A crate whose targets hold no test: `running 0 tests` under `test result: ok`, exit 0
+  cat >"$d/src/lib.rs" <<'RS'
+pub fn to_zero(n: i32) -> i32 { if n < 0 { 0 } else { n } }
+RS
+  run "$work/rs.none" cg test
+  declare_situation lies "a crate whose targets hold no test" "$?" "$work/rs.none"
+
+  # A test that panics. The status is honest, and the markers are still needed: a panic
+  # reaches the log of a run whose status something else swallowed
+  cat >"$d/src/lib.rs" <<'RS'
+pub fn to_zero(n: i32) -> i32 { if n < 0 { 0 } else { n } }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn negative_becomes_zero() { assert_eq!(super::to_zero(-5), 1); }
+}
+RS
+  run "$work/rs.fail" cg test
+  declare_situation honest "a test that fails" "$?" "$work/rs.fail"
+  every_marker_still_matches
+
+  if [[ -n "$write" ]]; then
+    # shellcheck disable=SC2016  # markdown backticks in a fixture header, not a substitution
+    printf 'A healthy `cargo test` on a crate where every target has a test, unit and doc-test both, captured from a real run. No entry in markers/rust.txt may match anything here: `0 filtered out` is what every full run prints, and a marker on it reddened every healthy run before this fixture existed.\n\n' >tests/fixtures/clean/rust.log
+    cat "$work/rs.healthy" >>tests/fixtures/clean/rust.log
+    {
+      printf 'A log carrying one realistic line per entry in markers/rust.txt, captured from real cargo runs.\n\n'
+      cat "$work/rs.none" "$work/rs.fail"
+    } >tests/fixtures/lying/rust.log
   fi
 fi
 

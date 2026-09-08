@@ -12,6 +12,6 @@ running 0 tests
 test result: ok. 0 passed
 
 # something happened that the summary line does not cover
-thread 'main' panicked
+panicked at
 test result: FAILED
 error: test failed, to rerun pass

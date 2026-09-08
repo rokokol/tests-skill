@@ -2,6 +2,6 @@ A log carrying one realistic line per entry in markers/rust.txt.
 
 running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
-thread 'main' panicked at src/lib.rs:42:9:
+thread 'tests::negative_becomes_zero' (1886931) panicked at src/lib.rs:6:34:
 test result: FAILED. 3 passed; 1 failed; 0 ignored
 error: test failed, to rerun pass `--lib`
