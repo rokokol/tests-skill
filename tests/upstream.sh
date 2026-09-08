@@ -350,6 +350,87 @@ JAVA
   fi
 fi
 
+# ---------------------------------------------------------------- node
+
+if wants node; then
+  eco=node
+  echo "== node: jest and vitest"
+  warm nixpkgs#nodejs
+  d="$work/nd"
+  mkdir -p "$d"
+  printf '{"name":"demo","version":"1.0.0","private":true}\n' >"$d/package.json"
+  # From the registry, because nixpkgs packages neither runner. That is the right way round
+  # for a drift watcher: the question is what today's jest and vitest print
+  printf '   installing jest and vitest from the registry\n'
+  (cd "$d" && HOME="$d" nix shell nixpkgs#nodejs -c npm install --no-audit --no-fund --silent jest vitest) >"$work/nd.install" 2>&1 ||
+    note "node: npm could not install the runners$(why "$work/nd.install")"
+
+  if [[ -x "$d/node_modules/.bin/jest" && -x "$d/node_modules/.bin/vitest" ]]; then
+    mkdir -p "$d/good" "$d/empty" "$d/broken" "$d/snap" "$d/snap2" "$d/handle" "$d/workers"
+    cat >"$d/good/a.test.js" <<'JS'
+import { expect, test } from "vitest";
+
+test("a negative reading becomes zero", () => {
+  expect(Math.max(0, -5)).toBe(0);
+});
+JS
+    jest_() { (cd "$d" && HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/jest "$@"); }
+    vitest_() { (cd "$d" && HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/vitest "$@"); }
+
+    run "$work/nd.healthy" vitest_ run good
+    check_healthy "$work/nd.healthy" "$?"
+
+    run "$work/nd.empty" vitest_ run empty
+    declare_situation honest "vitest pointed at a directory with no test file" "$?" "$work/nd.empty"
+
+    # The flag is not printed by either runner; a CI log carries it because the runner
+    # echoes the command, which is what `sh -x` does. Same shape as pytest's --exitfirst
+    run "$work/nd.passwith" sh -x -c "cd '$d' && HOME='$d' nix shell nixpkgs#nodejs -c ./node_modules/.bin/jest empty --passWithNoTests"
+    declare_situation lies "--passWithNoTests turning an empty run green" "$?" "$work/nd.passwith"
+
+    printf 'syntax ( error\n' >"$d/broken/b.test.js"
+    run "$work/nd.broken" jest_ broken
+    declare_situation honest "a jest suite that will not load" "$?" "$work/nd.broken"
+
+    printf 'test("one snapshot", () => { expect({a:1}).toMatchSnapshot(); });\n' >"$d/snap/s.test.js"
+    run "$work/nd.snap" jest_ snap
+    declare_situation lies "a snapshot written by the run that was meant to check it" "$?" "$work/nd.snap"
+    printf 'test("other", () => { expect(1).toBe(1); });\n' >"$d/snap/s.test.js"
+    run "$work/nd.obsolete" jest_ snap
+    # jest fails a run holding an obsolete snapshot, so the status says it and the marker is
+    # for the log of a run whose status something else swallowed
+    declare_situation honest "a snapshot nothing compares against any more" "$?" "$work/nd.obsolete"
+
+    printf 'test("a", () => { expect({a:1}).toMatchSnapshot(); });\ntest("b", () => { expect({b:2}).toMatchSnapshot(); });\n' >"$d/snap2/s.test.js"
+    run "$work/nd.snaps" jest_ snap2
+    declare_situation lies "two snapshots written, for the plural the set also carries" "$?" "$work/nd.snaps"
+
+    for i in 1 2 3; do
+      printf 'const net = require("net");\ntest("leaks in worker %s", () => { const s = net.createServer(); s.listen(0); expect(1).toBe(1); });\n' "$i" >"$d/workers/w$i.test.js"
+    done
+    run "$work/nd.workers" jest_ workers --maxWorkers=3 --forceExit
+    declare_situation lies "workers force-exited because the tests leaked handles" "$?" "$work/nd.workers"
+
+    # This one does not end: jest waits on the handle for as long as the runner allows, and
+    # in CI that is the job timeout. The nonzero status below is the watchdog's, not jest's,
+    # which is the finding rather than a flaw in the probe
+    printf 'const net = require("net");\ntest("leaves a socket listening", () => { const s = net.createServer(); s.listen(0); expect(1).toBe(1); });\n' >"$d/handle/h.test.js"
+    run "$work/nd.hang" timeout 60 sh -c "cd '$d' && HOME='$d' nix shell nixpkgs#nodejs -c ./node_modules/.bin/jest handle"
+    declare_situation honest "a run that never ends because a handle was left open" "$?" "$work/nd.hang"
+    every_marker_still_matches
+
+    if [[ -n "$write" ]]; then
+      # shellcheck disable=SC2016  # markdown backticks in a fixture header, not a substitution
+      printf 'A healthy `vitest run` with one test file, captured from a real run. No entry in markers/node.txt may match anything here.\n\n' >tests/fixtures/clean/node.log
+      cat "$work/nd.healthy" >>tests/fixtures/clean/node.log
+      {
+        printf 'A log carrying one realistic line per entry in markers/node.txt, captured from real jest and vitest runs.\n\n'
+        cat "$work/nd.empty" "$work/nd.passwith" "$work/nd.broken" "$work/nd.snap" "$work/nd.obsolete" "$work/nd.snaps" "$work/nd.workers" "$work/nd.hang"
+      } >tests/fixtures/lying/node.log
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------- cpp
 
 if wants cpp; then

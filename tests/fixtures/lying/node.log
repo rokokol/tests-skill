@@ -6,9 +6,6 @@ Tests:       0 total
 ● Test suite failed to run
 › 1 snapshot written from 1 test suite.
 › 3 snapshots written from 2 test suites.
-› 1 obsolete snapshot found.
-  at test.only (src/sync.test.ts:14:6)
-  at it.only (src/render.test.ts:9:6)
-  at describe.only (src/api.test.ts:3:1)
+› 1 snapshot obsolete from 1 test suite. To remove it, re-run jest with `-u`.
 A worker process has failed to exit gracefully and has been force exited.
 Jest did not exit one second after the test run has completed.

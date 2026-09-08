@@ -498,6 +498,89 @@ cmd_bisect_probe() {
   esac
 }
 
+# The switch that runs one test and skips the rest of the file, left in the source. No
+# runner reports it: jest and vitest print a skip count, which is what a suite legitimately
+# skipping a platform test prints too, and both exit 0. So a marker cannot reach it and the
+# log cannot show it — the source can, which is what this reads.
+#
+# It is one of a family. `.only`, `--pass-with-no-tests`, `-DskipTests`, `-x`: each was
+# added for an honest local reason, each turns a run into a lie when it outlives the commit
+# that needed it, and none of them is visible in a log. The ones that live in a config are
+# forbidden there — vitest's allowOnly, playwright's forbidOnly. The ones that live in the
+# source are found here.
+focus_patterns() {
+  # Two regexes rather than a list of fixed strings, for two reasons. A bare jasmine focus
+  # name written as a literal, with its opening parenthesis,
+  # matches curve_fit( and every other identifier ending in it, so a boundary is needed.
+  # And a list of the literals would be found by this very scan when it is run on a
+  # repository holding this file — a pattern that matches itself reports the harness as the
+  # problem. Neither line below matches either line below.
+  cat <<'FOCUS'
+(^|[^A-Za-z0-9_.$])(describe|context|suite|it|test)\.only[[:space:]]*\(
+^[[:space:]]*(fdescribe|fcontext|fit)[[:space:]]*[('"]
+FOCUS
+}
+
+cmd_focused() { # focused [--any-file] [PATH...]
+  local any_file=""
+  local -a paths=()
+  while (($#)); do
+    case "$1" in
+      --any-file)
+        any_file=1
+        shift
+        ;;
+      --)
+        shift
+        ;;
+      -*) die "focused: no such flag: $1" ;;
+      *)
+        paths+=("$1")
+        shift
+        ;;
+    esac
+  done
+  ((${#paths[@]} > 0)) || paths=(.)
+  local p
+  for p in "${paths[@]}"; do
+    [[ -e "$p" ]] || die "focused: $p does not exist"
+  done
+
+  local pat found=0
+  pat=$(mktemp "${TMPDIR:-/tmp}/t.sh.XXXXXX") || fatal "focused: cannot write a pattern file"
+  focus_patterns >"$pat" || fatal "focused: cannot write a pattern file"
+  # Refused rather than run empty: a scan with no pattern reports nothing and reads exactly
+  # like a clean tree, which is the shape of guard this whole harness exists to refuse
+  [[ -s "$pat" ]] || fatal "focused: the pattern list came out empty"
+
+  # The paths are filtered out of the result rather than kept out of the search:
+  # --exclude-dir is a GNU extension, and the busybox grep a bash-3.2 container brings along
+  # rejects it outright. With it, this found nothing there and said so cheerfully — a scan
+  # that failed and reported nothing reads exactly like a clean tree, which is the shape of
+  # guard this harness exists to refuse.
+  local hits scan
+  scan=0
+  hits=$(grep -rnIE -f "$pat" -- "${paths[@]}" 2>/dev/null) || scan=$?
+  rm -f "$pat"
+  # grep says 1 for "nothing matched" and 2 or more for "I could not look", and only the
+  # first of those is an answer
+  ((scan <= 1)) || fatal "focused: the scan itself failed — grep exited $scan, so nothing below means anything"
+  if [[ -z "$any_file" && -n "$hits" ]]; then
+    # Somebody else's focused test is not this repository's problem, and a vendored tree is
+    # large enough to bury the one line that is
+    hits=$(printf '%s\n' "$hits" | grep -vE '(^|/)(node_modules|vendor|third_party|\.git|dist|build|target)/' || :)
+  fi
+  [[ -n "$hits" ]] || {
+    echo "focused: no focus modifier in the source — every test the runner is given will run"
+    return 0
+  }
+  printf '%s\n' "$hits" | sed 's/^/FOCUSED  /'
+  found=$(printf '%s\n' "$hits" | grep -c . || :)
+  echo
+  printf 'focused: %s line(s) run one test and skip the rest of their file — the runner will not say so and will exit 0\n' "$found" >&2
+  return 80
+}
+
 cmd_bisect() {
   local good="${1:-}"
   [[ -n "$good" ]] || die "bisect: needs a known-good ref (t.sh bisect v1.2.0 -- pytest -q)"
@@ -1411,6 +1494,7 @@ t.sh — the local test harness: one subcommand per question a test run raises
 
   t.sh run [FLAGS] -- CMD...           did it pass: CMD's own status, the whole log kept and read even at 0
   t.sh flaky N [FLAGS] -- CMD...       do N runs of the same code disagree
+  t.sh focused [--any-file] [PATH...]  is a `.only` left in the source, so most of the suite is skipped
   t.sh bisect GOOD [FLAGS] -- CMD...   which commit between GOOD and HEAD broke it
   t.sh falsify [FLAGS] [FILTER] -- CMD...
                                        which guards the suite would not notice being broken
@@ -1459,6 +1543,27 @@ word, so a wrapper can read it without guessing from the number.
 
 Exit: CMD's own; 79 when CMD exited 0 but its log says otherwise; 64 for a usage error;
 70 when the log could not be written.
+EOF
+}
+
+help_focused() {
+  cat <<'EOF'
+t.sh focused [--any-file] [PATH...]
+
+Finds the modifier that runs one test and skips the rest of its file — `test.only`,
+`it.only`, `describe.only`, and jasmine's `fit` and `fdescribe` — left in the source. PATH
+defaults to the working directory.
+
+  --any-file          look inside node_modules, vendor, third_party, dist, build and
+                      target as well, which are skipped by default because somebody
+                      else's focused test is not this repository's problem
+
+No runner reports one. jest and vitest print a skip count, which is what a suite skipping
+a platform test prints too, and both exit 0 — so this cannot be a marker, and a log cannot
+show it. Where the switch lives in a config instead, forbid it there: vitest's
+`allowOnly: false`, playwright's `forbidOnly: true`, eslint's `jest/no-focused-tests`.
+
+Exit: 0 when the source holds none; 80 when it holds any, with every line named.
 EOF
 }
 
@@ -1572,6 +1677,7 @@ error, pytest uses 2 to 5, cargo-nextest exits 4 for "no tests ran".
   86  the runs disagreed with each other (flaky)
   87  the defect list has drifted, or a declared exception was disproved (falsify)
   88  a defect, or the fix taken away, only stopped the build (falsify, prove)
+  80  a focus modifier was left in the source, so most of the suite will not run (focused)
   89  only commits that could not answer are left between good and bad (bisect)
 EOF
 }
@@ -1580,9 +1686,9 @@ cmd_help() {
   local topic="${1:-}"
   case "$topic" in
     '') help_general ;;
-    run | flaky | bisect | bisect-probe | falsify | prove) "help_${topic//-/_}" ;;
+    run | flaky | focused | bisect | bisect-probe | falsify | prove) "help_${topic//-/_}" ;;
     codes | exit | status) help_codes ;;
-    *) die "help: no such topic '$topic' — run, flaky, bisect, falsify, prove, codes" ;;
+    *) die "help: no such topic '$topic' — run, flaky, focused, bisect, falsify, prove, codes" ;;
   esac
 }
 
@@ -1591,6 +1697,7 @@ cmd="${1:-}"
 case "$cmd" in
   run) cmd_run "$@" ;;
   flaky) cmd_flaky "$@" ;;
+  focused) cmd_focused "$@" ;;
   bisect) cmd_bisect "$@" ;;
   bisect-probe) cmd_bisect_probe "$@" ;;
   falsify) cmd_falsify "$@" ;;

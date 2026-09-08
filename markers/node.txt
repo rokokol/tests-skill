@@ -13,12 +13,9 @@ Test suite failed to run
 # the expectation was regenerated instead of checked
 snapshot written
 snapshots written
-obsolete snapshot
+snapshot obsolete
 
 # the run was silently reduced to one test
-test.only
-it.only
-describe.only
 
 # something is still running; its state leaks into the next run
 worker process has failed to exit gracefully

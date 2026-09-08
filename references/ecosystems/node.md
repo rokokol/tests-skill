@@ -24,9 +24,10 @@ These ship as `markers/node.txt`, opted into with `t.sh run -m node -- npx vites
 | `1 snapshot written` in CI | the expectation was regenerated, not checked |
 | `Test suite failed to run` | the file never executed; its tests are absent, not passing |
 | `A worker process has failed to exit gracefully` | something is still running; state leaks into the next run |
-| `test.skip` / `test.only` committed | `.only` silently reduces the run to one test |
+| `Jest did not exit one second after` | a handle nobody closed; the run does not end, and in CI that is the job timeout |
+| `snapshot obsolete` | a stored expectation nothing compares against any more |
 
-A committed `.only` is worth a lint rule of its own (`eslint-plugin-no-only-tests`, vitest's `--allowOnly=false`): it turns a full suite into one test while every status line still says the run passed
+A committed `.only` is not among them, and cannot be: see [below](#a-forgotten-only-is-not-in-the-log)
 
 ## Fail on nothing ran, natively
 
@@ -44,6 +45,20 @@ The `.only` family is the other silent reduction: vitest's `--allowOnly` default
 - Reset module state between tests (`vi.resetModules()`); an ES module's top-level state persists for the whole worker
 - Unhandled promise rejections can pass silently in older setups — fail the run on them
 - The default is multi-process: a test writing to a fixed port, a fixed database name or a shared file will pass alone and fail in the suite
+
+## A forgotten `.only` is not in the log
+
+`test.only`, `it.only` and `describe.only` run one test and skip the rest of the file. They are the right tool while you are chasing one failure among fifty, and the whole problem is that they survive a commit: CI then runs the one, prints `Tests: 1 passed | 2 skipped (3)`, exits 0, and the suite has stopped running while the build stays green
+
+No runner says so. Measured on jest 30 and vitest 3: neither prints the words `test.only` anywhere, and the only trace is a skip count that a suite skipping a test for a missing browser produces just as readily. `markers/node.txt` carried those three strings for a while, and they could not have matched anything a runner wrote
+
+The guard is the configuration:
+
+- **vitest**: `allowOnly: false`, or `--allowOnly=false`, which turns it into `[Vitest] Unexpected .only modifier` and exit 1
+- **playwright**: `forbidOnly: true`
+- **jest**: nothing built in; the standard answer is eslint with `jest/no-focused-tests`
+
+This is one of a family, and the family is worth recognising by shape rather than by name. `.only`, `--pass-with-no-tests`, `--passWithNoTests`, `-DskipTests`, `-x`: each was added for an honest local reason, each turns a CI run into a lie when it outlives the commit that needed it, and not one of them is visible in a log — the runner either says nothing or says exactly what it says for the legitimate case. A marker cannot reach any of them. The switch that forbids it can, and `t.sh focused` finds the ones that live in the source
 
 ## For `tests/defects.sh`
 

@@ -475,6 +475,44 @@ check_behaviour() {
     >/dev/null 2>&1 || status=$?
   ((status == 86)) || fail "flaky missed a command whose runs disagreed (got $status)"
 
+  echo "== focused finds the modifier that runs one test and skips the rest of its file"
+  # No runner reports a stray `.only`: jest and vitest print a skip count, which is what a
+  # suite skipping a platform test prints too, and both exit 0. It cannot be a marker, so it
+  # is a scan of the source — and a scan is only worth having if it is quiet on the
+  # lookalikes, which is half of what is checked here.
+  foc="$work/focused"
+  mkdir -p "$foc/src" "$foc/node_modules/dep" "$foc/clean"
+  printf 'describe("a suite", () => {\n  it.only("the only one that runs", () => {});\n  it("never runs", () => {});\n});\n' >"$foc/src/a.test.js"
+  printf "fdescribe 'a focused group' do\n  fit 'a focused example' do\n  end\nend\n" >"$foc/src/b.spec.rb"
+  # Neither of these is a focused test, and a scan that says they are gets switched off
+  printf 'double curve_fit(double *xs) { return 0.0; }\nconst char *m = "the report should fit(and not trip it)";\n' >"$foc/src/innocent.c"
+  printf 'test.only("somebody else problem", () => {});\n' >"$foc/node_modules/dep/d.test.js"
+  printf 'test("runs like the rest", () => {});\n' >"$foc/clean/c.test.js"
+  status=0
+  foc_out=$(tsh focused "$foc/src" 2>&1) || status=$?
+  ((status == 80)) || fail "focused exited $status on a tree holding three focus modifiers (want 80):"$'\n'"$foc_out"
+  for want in 'a.test.js' 'b.spec.rb:1' 'b.spec.rb:2'; do
+    grep -q "$want" <<<"$foc_out" || fail "focused did not name $want:"$'\n'"$foc_out"
+  done
+  ! grep -q 'innocent.c' <<<"$foc_out" ||
+    fail "focused reported curve_fit( or the word inside a string — a scan that cries wolf is switched off within a day:"$'\n'"$foc_out"
+  status=0
+  foc_out=$(tsh focused "$foc/clean" 2>&1) || status=$?
+  ((status == 0)) || fail "focused exited $status on a tree holding no focus modifier (want 0):"$'\n'"$foc_out"
+  # Somebody else's focused test is not this repository's problem until it is asked for
+  status=0
+  foc_out=$(tsh focused "$foc" 2>&1) || status=$?
+  ! grep -q 'node_modules' <<<"$foc_out" || fail "focused looked inside node_modules without being asked:"$'\n'"$foc_out"
+  status=0
+  foc_out=$(tsh focused --any-file "$foc" 2>&1) || status=$?
+  grep -q 'node_modules' <<<"$foc_out" || fail "focused --any-file did not look inside node_modules:"$'\n'"$foc_out"
+  status=0
+  tsh focused --no-such-flag "$foc" >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "focused accepted a flag it does not have (got $status)"
+  status=0
+  tsh focused "$work/no-such-path" >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "focused accepted a path that does not exist (got $status)"
+
   echo "== flaky refuses the arguments that would make it meaningless"
   status=0
   tsh flaky 1 -l "$work/logs" -- sh -c 'exit 0' >/dev/null 2>&1 || status=$?
@@ -1339,6 +1377,12 @@ check_proofs() {
       sed t.sh "/^  trap /s/restore_all; //" "trap 'cleanup_worktree' EXIT"
     # The grep is the whole of `expect caught`: without it every red run is a catch, which
     # is the claim the clause exists to stop being made
+    # A scan that reports nothing reads exactly like a clean tree, which is the shape of
+    # guard this harness exists to refuse — so the emptied pattern list has to be fatal
+    plant behaviour blindscan "exited 70 on a tree" "a focus scan with no pattern to scan for" \
+      sed t.sh "s/^  cat <<'FOCUS'\$/  : <<'FOCUS'/" ": <<'FOCUS'"
+    plant behaviour unfocused "exited 0 on a tree" "a focused that finds them and says nothing went wrong" \
+      sed t.sh 's/^  return 80$/  return 0/' 'return 0'
     plant behaviour miscredited "was still called caught" "a falsify that credits a red run to a guard that did not catch" \
       sed t.sh 's@^      grep -qF -- "$expect" .*VERDICT=misattributed$@      : # planted@' '# planted'
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
@@ -1444,8 +1488,8 @@ check_proofs() {
   # unnoticed. These are the counts with that block skipped.
   case "$mode" in
     lint) want_planted=21 ;;
-    behaviour) want_planted=33 ;;
-    all) want_planted=54 ;;
+    behaviour) want_planted=35 ;;
+    all) want_planted=56 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
