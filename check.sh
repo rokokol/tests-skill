@@ -169,9 +169,14 @@ check_lint() {
     { if (prev) print NR; prev = 1 }
   ' "$1"
   }
-  docs=(README.md SKILL.md CHANGELOG.md)
-  while IFS= read -r f; do docs+=("$f"); done < <(find references -type f -name '*.md' | sort)
-  ((${#docs[@]} > 3)) || fail "no references were found — the extractor is broken"
+  # Found rather than listed. A hand-kept list is a second place to remember a document
+  # exists, and the one added at the root simply escaped the rule while the gate stayed
+  # green — which is the same shape as the marker sets that had no fixture.
+  docs=()
+  while IFS= read -r f; do docs+=("$f"); done < <(find . -name '*.md' -not -path './.git/*' | sed 's|^\./||' | sort)
+  ((${#docs[@]} > 3)) || fail "the markdown finder came back with ${#docs[@]} documents — it is broken, and everything below would go unchecked"
+  printf '%s\n' "${docs[@]}" | grep -q '^references/' ||
+    fail "the markdown finder found no reference — it is broken"
   for doc in "${docs[@]}"; do
     wrapped=$(hard_wrapped "$doc")
     [[ -z "$wrapped" ]] ||
@@ -1079,6 +1084,10 @@ check_proofs() {
       append README.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
     plant lint wrapped-reference "hard-wraps a paragraph" "a hard-wrapped paragraph in a reference" \
       append references/verdict.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
+    # A document at the root that no list in the gate names: the rule has to find it, and
+    # with the old hand-kept list this copy passed
+    plant lint wrapped-unlisted "hard-wraps a paragraph" "a hard-wrapped paragraph in a document no list names" \
+      append pitfalls.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
     plant lint bloated "has grown to" "a SKILL.md that grew into a reference" \
       append SKILL.md "$(printf '\n- one more rule, and another\n%.0s' $(seq 1 40))"
     plant lint orphan "reaches it" "a reference nothing links to" \
