@@ -1274,10 +1274,13 @@ check_proofs() {
 
   # The table above is the proof; a table that lost its rows would prove nothing while
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
+  # A floor and not an equality, because the bash-3.2 block adds two rows where it runs;
+  # but a floor left behind by rows added since is slack, and slack is how a lost row goes
+  # unnoticed. These are the counts with that block skipped.
   case "$mode" in
-    lint) want_planted=17 ;;
-    behaviour) want_planted=29 ;;
-    all) want_planted=46 ;;
+    lint) want_planted=20 ;;
+    behaviour) want_planted=30 ;;
+    all) want_planted=50 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
