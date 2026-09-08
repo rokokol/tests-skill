@@ -1,10 +1,10 @@
 # TypeScript
 
-Everything in [node.md](node.md) applies to running the tests. What is specific to TypeScript is that a whole class of failure lives in a step the test runner does not perform.
+Everything in [node.md](node.md) applies to running the tests. What is specific to TypeScript is that a whole class of failure lives in a step the test runner does not perform
 
 ## The type check is a separate check
 
-Most runners — vitest, jest with `esbuild`/`swc`, `tsx`, `ts-node --transpile-only` — **strip types without checking them**. That is deliberate and fast, and it means a suite can be entirely green while `tsc` has three errors. If your gate runs only the tests, type errors reach production.
+Most runners — vitest, jest with `esbuild`/`swc`, `tsx`, `ts-node --transpile-only` — **strip types without checking them**. That is deliberate and fast, and it means a suite can be entirely green while `tsc` has three errors. If your gate runs only the tests, type errors reach production
 
 ```sh
 t.sh run -- npx tsc --noEmit
@@ -13,10 +13,10 @@ t.sh run -- npx vitest run --passWithNoTests=false
 
 Two commands, both gating. In `tsconfig.json`, the settings that decide whether the check is worth running:
 
-- `"strict": true` — without it, `null` and `undefined` are assignable to everything and the checker agrees with almost anything.
-- `"noUncheckedIndexedAccess": true` — makes `arr[i]` possibly-undefined, which is where runtime `TypeError`s come from.
-- `"noImplicitOverride"`, `"exactOptionalPropertyTypes"` — cheap, and each closes a real gap.
-- `"skipLibCheck": true` is a pragmatic exception, not a general licence to skip.
+- `"strict": true` — without it, `null` and `undefined` are assignable to everything and the checker agrees with almost anything
+- `"noUncheckedIndexedAccess": true` — makes `arr[i]` possibly-undefined, which is where runtime `TypeError`s come from
+- `"noImplicitOverride"`, `"exactOptionalPropertyTypes"` — cheap, and each closes a real gap
+- `"skipLibCheck": true` is a pragmatic exception, not a general licence to skip
 
 ## Green that lies
 
@@ -29,16 +29,16 @@ Two commands, both gating. In `tsconfig.json`, the settings that decide whether 
 | a `.d.ts` disagreeing with the runtime | nothing checks a hand-written declaration against reality |
 | a test asserting `expect(x).toBeDefined()` on an `any` | the assertion is vacuous |
 
-`any` deserves its own attention: once a value is `any`, every operation on it type-checks, so a test built on `any` fixtures asserts far less than it appears to. `@typescript-eslint` with `no-unsafe-*` reports where that is happening.
+`any` deserves its own attention: once a value is `any`, every operation on it type-checks, so a test built on `any` fixtures asserts far less than it appears to. `@typescript-eslint` with `no-unsafe-*` reports where that is happening
 
 ## Fail on nothing ran, natively
 
-The runners are node's, with node's switches — see [node.md](node.md). What is specific here is that `tsc --noEmit` is its own gate with its own honest status: it exits 2 on any error and 0 only when every file it was given checks, and it cannot run zero files without saying so. What it can do is check the wrong files: a `tsconfig.json` whose `include` misses a directory reports a clean check of everything else, so the number of files it checked is worth reading once, with `--listFilesOnly`, on the day the config is written.
+The runners are node's, with node's switches — see [node.md](node.md). What is specific here is that `tsc --noEmit` is its own gate with its own honest status: it exits 2 on any error and 0 only when every file it was given checks, and it cannot run zero files without saying so. What it can do is check the wrong files: a `tsconfig.json` whose `include` misses a directory reports a clean check of everything else, so the number of files it checked is worth reading once, with `--listFilesOnly`, on the day the config is written
 
 ## Testing the types themselves
 
-Where a type is the product — a public API, a generic helper — assert on it, with `expectTypeOf` (vitest), `tsd`, or `@ts-expect-error` on a call that must not compile. `@ts-expect-error` is the falsifiable one: it fails when the error stops occurring, so it cannot rot into a comment.
+Where a type is the product — a public API, a generic helper — assert on it, with `expectTypeOf` (vitest), `tsd`, or `@ts-expect-error` on a call that must not compile. `@ts-expect-error` is the falsifiable one: it fails when the error stops occurring, so it cannot rot into a comment
 
 ## For `tests/defects.sh`
 
-Always run with `-b 'npx tsc --noEmit'`. Without the build phase, an edit the type checker rejects looks exactly like a defect the tests caught, and the report credits coverage that does not exist. Edits that stay type-correct: a narrowed union widened back, a guard returning a constant, an `??` replaced by `||`, a `filter` predicate replaced by `() => true`.
+Always run with `-b 'npx tsc --noEmit'`. Without the build phase, an edit the type checker rejects looks exactly like a defect the tests caught, and the report credits coverage that does not exist. Edits that stay type-correct: a narrowed union widened back, a guard returning a constant, an `??` replaced by `||`, a `filter` predicate replaced by `() => true`

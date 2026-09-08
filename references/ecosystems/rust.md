@@ -7,12 +7,12 @@ t.sh run -- cargo build --workspace --all-targets
 t.sh run -m rust -- cargo test --workspace --no-fail-fast
 ```
 
-Two invocations, not one: a build failure is a build failure, and folding it into the test run turns "it does not compile" into "the tests failed", which sends the next reader to the wrong place. `-b` belongs to `falsify` and `bisect`, where the harness has to tell those two apart on your behalf; here you can see which command went red.
+Two invocations, not one: a build failure is a build failure, and folding it into the test run turns "it does not compile" into "the tests failed", which sends the next reader to the wrong place. `-b` belongs to `falsify` and `bisect`, where the harness has to tell those two apart on your behalf; here you can see which command went red
 
-- `--workspace` — without it, `cargo test` in a workspace root may test one member and report success for the whole thing.
-- `--no-fail-fast` — otherwise the first failing target stops the run and the summary describes a fraction of it.
-- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` as separate steps; `--all-targets` is what makes clippy look at the tests too, which is where the sloppiest code usually is.
-- Pin the toolchain in `rust-toolchain.toml`. An unpinned toolchain changes a run's behaviour with zero change in the repository.
+- `--workspace` — without it, `cargo test` in a workspace root may test one member and report success for the whole thing
+- `--no-fail-fast` — otherwise the first failing target stops the run and the summary describes a fraction of it
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` as separate steps; `--all-targets` is what makes clippy look at the tests too, which is where the sloppiest code usually is
+- Pin the toolchain in `rust-toolchain.toml`. An unpinned toolchain changes a run's behaviour with zero change in the repository
 
 ## Green that lies
 
@@ -25,23 +25,23 @@ Two invocations, not one: a build failure is a build failure, and folding it int
 | `#[ignore]` accumulating | a to-do list that never turns red |
 | a panic in a spawned thread | the thread dies, the test may still pass |
 
-`running 0 tests` is printed for every target without tests — doc-test targets and empty integration targets included — so it is not in `t.sh`'s default set. It ships as an opt-in one instead — `t.sh run -m rust -- cargo test --workspace` — worth adopting in a crate where every target really is expected to have tests. `markers/rust.txt` also carries `thread 'main' panicked` and the failed summary line. A filter that matched nothing prints the same two empty-run lines with `N filtered out` beside them; `0 filtered out` itself is what every healthy full run prints, and a marker on it once reddened every good run.
+`running 0 tests` is printed for every target without tests — doc-test targets and empty integration targets included — so it is not in `t.sh`'s default set. It ships as an opt-in one instead — `t.sh run -m rust -- cargo test --workspace` — worth adopting in a crate where every target really is expected to have tests. `markers/rust.txt` also carries `thread 'main' panicked` and the failed summary line. A filter that matched nothing prints the same two empty-run lines with `N filtered out` beside them; `0 filtered out` itself is what every healthy full run prints, and a marker on it once reddened every good run
 
 ## Fail on nothing ran, natively
 
-`cargo test` has no such switch: a filter that matches nothing prints `running 0 tests` and exits 0. `cargo nextest` does — it exits 4, `NO_TESTS_RUN`, when nothing was selected, 101 when the build failed and 100 when a test failed, which is a strictly better verdict than `cargo test`'s 0 or 101 — so where nextest is already in use the marker set is a second line, not the first. One thing nextest does that this skill forbids: `--retries N` reruns a failed test and, when a retry passes, marks it *flaky* and **counts it as a success by default**. `--flaky-result fail` is the setting that keeps the gate honest, and it does not turn retries on by itself.
+`cargo test` has no such switch: a filter that matches nothing prints `running 0 tests` and exits 0. `cargo nextest` does — it exits 4, `NO_TESTS_RUN`, when nothing was selected, 101 when the build failed and 100 when a test failed, which is a strictly better verdict than `cargo test`'s 0 or 101 — so where nextest is already in use the marker set is a second line, not the first. One thing nextest does that this skill forbids: `--retries N` reruns a failed test and, when a retry passes, marks it *flaky* and **counts it as a success by default**. `--flaky-result fail` is the setting that keeps the gate honest, and it does not turn retries on by itself
 
 ## Determinism
 
-- `tempfile::TempDir` for filesystem work; it removes itself on drop.
-- Inject the clock and the RNG rather than calling `SystemTime::now()` or `thread_rng()` in the code under test. Seed anything random and print the seed on failure.
-- `cargo test` runs tests in parallel threads by default, so anything touching a process global — environment variables, the current directory, a `static mut`, a global logger — is shared. `std::env::set_var` is the classic: it affects the whole test binary. `--test-threads=1` hides the bug rather than fixing it.
-- `assert_eq!` on a `HashMap` iteration order will pass locally and fail elsewhere; compare as sets or sort first.
+- `tempfile::TempDir` for filesystem work; it removes itself on drop
+- Inject the clock and the RNG rather than calling `SystemTime::now()` or `thread_rng()` in the code under test. Seed anything random and print the seed on failure
+- `cargo test` runs tests in parallel threads by default, so anything touching a process global — environment variables, the current directory, a `static mut`, a global logger — is shared. `std::env::set_var` is the classic: it affects the whole test binary. `--test-threads=1` hides the bug rather than fixing it
+- `assert_eq!` on a `HashMap` iteration order will pass locally and fail elsewhere; compare as sets or sort first
 
 ## Hardware, GPUs and other things CI does not have
 
-Define a trait for the boundary — audio input, inference backend, clipboard, hotkeys — with the real implementation in the binary crate and a fake in the tests. Prefer this over `#[cfg(feature = ...)]`: feature flags multiply the build matrix, and the combination nobody tested is the one that ships. The real device then needs exactly one environment-layer test, run by hand before a release.
+Define a trait for the boundary — audio input, inference backend, clipboard, hotkeys — with the real implementation in the binary crate and a fake in the tests. Prefer this over `#[cfg(feature = ...)]`: feature flags multiply the build matrix, and the combination nobody tested is the one that ships. The real device then needs exactly one environment-layer test, run by hand before a release
 
 ## For `tests/defects.sh`
 
-Always pass `-b 'cargo build --workspace --all-targets'`: without the build phase, an edit the compiler rejects is indistinguishable from a defect the tests caught, and the report would credit coverage that does not exist. Edits that stay compilable: a `?` replaced with `.unwrap_or_default()`, a `match` arm's body swapped for the other arm's value, a bound widened, a `filter(...)` dropped, a `saturating_sub` turned into `-`. Watch for edits that leave an unused variable or an unreachable pattern — with `-D warnings` those become `unusable`.
+Always pass `-b 'cargo build --workspace --all-targets'`: without the build phase, an edit the compiler rejects is indistinguishable from a defect the tests caught, and the report would credit coverage that does not exist. Edits that stay compilable: a `?` replaced with `.unwrap_or_default()`, a `match` arm's body swapped for the other arm's value, a bound widened, a `filter(...)` dropped, a `saturating_sub` turned into `-`. Watch for edits that leave an unused variable or an unreachable pattern — with `-D warnings` those become `unusable`

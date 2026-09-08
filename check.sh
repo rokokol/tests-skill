@@ -177,10 +177,28 @@ check_lint() {
   ((${#docs[@]} > 3)) || fail "the markdown finder came back with ${#docs[@]} documents — it is broken, and everything below would go unchecked"
   printf '%s\n' "${docs[@]}" | grep -q '^references/' ||
     fail "the markdown finder found no reference — it is broken"
+  # The other half of the same house style, and the one that drifts silently: a paragraph, a
+  # list item — numbered as much as bulleted — and a table cell all end bare. The full stops
+  # inside a paragraph stay; only the one holding the door shut goes.
+  ends_bare() { # ends_bare FILE -> prints the line numbers that end in a full stop
+    awk '
+    NR == 1 && /^---$/ { front = 1; next }
+    front { if (/^---$/) front = 0; next }
+    /^```/ { fence = !fence; next }
+    fence { next }
+    # an indented line is a code block, not prose
+    /^    / || /^\t/ { next }
+    # a full stop the line ends on, and not an ellipsis
+    /[^.]\.$/ { print NR }
+  ' "$1"
+  }
   for doc in "${docs[@]}"; do
     wrapped=$(hard_wrapped "$doc")
     [[ -z "$wrapped" ]] ||
       fail "$doc hard-wraps a paragraph at line(s): $(tr '\n' ' ' <<<"$wrapped")— one paragraph is one line"
+    stopped=$(ends_bare "$doc")
+    [[ -z "$stopped" ]] ||
+      fail "$doc ends a line with a full stop at line(s): $(tr '\n' ' ' <<<"$stopped")— a paragraph, a list item and a table cell all end bare"
   done
 
   echo "== every t.sh example in the docs uses flags that subcommand actually accepts"
@@ -1134,6 +1152,8 @@ check_proofs() {
     # with the old hand-kept list this copy passed
     plant lint wrapped-unlisted "hard-wraps a paragraph" "a hard-wrapped paragraph in a document no list names" \
       append pitfalls.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
+    plant lint fullstop "ends a line with a full stop" "a list item that ends with a full stop" \
+      append references/verdict.md $'\n- a list item that ends with a full stop.\n'
     plant lint bloated "has grown to" "a SKILL.md that grew into a reference" \
       append SKILL.md "$(printf '\n- one more rule, and another\n%.0s' $(seq 1 40))"
     plant lint orphan "reaches it" "a reference nothing links to" \
@@ -1315,9 +1335,9 @@ check_proofs() {
   # but a floor left behind by rows added since is slack, and slack is how a lost row goes
   # unnoticed. These are the counts with that block skipped.
   case "$mode" in
-    lint) want_planted=20 ;;
+    lint) want_planted=21 ;;
     behaviour) want_planted=32 ;;
-    all) want_planted=52 ;;
+    all) want_planted=53 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

@@ -1,6 +1,6 @@
 # Sources
 
-Where the rules come from, one line per source, grouped by the reference that uses it. Only primary sources: papers, official documentation, the authors of the ideas. The references themselves cite this file rather than the web, so a rule never depends on somebody else's repository staying where it was.
+Where the rules come from, one line per source, grouped by the reference that uses it. Only primary sources: papers, official documentation, the authors of the ideas. The references themselves cite this file rather than the web, so a rule never depends on somebody else's repository staying where it was
 
 ## The verdict, and the log
 
@@ -58,4 +58,4 @@ Where the rules come from, one line per source, grouped by the reference that us
 
 ## Adjacent skills, read and not depended on
 
-While this skill was being written, the testing, debugging and verification skills published for coding agents by several authors were read for ideas — among them the superpowers, qa-skills, augmentedcode-skills, agent-skills and trailofbits collections. What was borrowed is stated as a rule in the references above, in this skill's own words; nothing here links to or loads any of them, because a rule that depends on somebody else's repository staying where it was is a rule that can vanish.
+While this skill was being written, the testing, debugging and verification skills published for coding agents by several authors were read for ideas — among them the superpowers, qa-skills, augmentedcode-skills, agent-skills and trailofbits collections. What was borrowed is stated as a rule in the references above, in this skill's own words; nothing here links to or loads any of them, because a rule that depends on somebody else's repository staying where it was is a rule that can vanish
