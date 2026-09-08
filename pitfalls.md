@@ -6,7 +6,7 @@ Traps found while working on this repository, kept so the next person editing it
 
 Running copies in parallel is fine; running them off the foreground without job control is not. POSIX has a non-interactive shell start background jobs with `SIGINT` and `SIGQUIT` set to ignore, an ignored disposition is inherited by everything the job spawns, and `check_behaviour` asserts what `bisect-probe` makes of a command killed by a signal — `probe 130 "is interrupted by the user" -- sh -c 'kill -INT $$'` among them. The signal then does nothing and the probe reports 0. Sixteen copies started with a plain `&` failed identically on that line; the same sixteen under `set -m` were all clean, because job control gives each its own process group and the default dispositions back
 
-Nothing in the gate is affected today: `catches` runs each copy in a command substitution, which is the foreground. This is for whoever adds parallelism, and the fix is the one line `set -m` rather than any supervision by hand. It also only bites a suite that tests signal handling, which this one does because `bisect-probe` has to tell a crash from a person pressing Ctrl-C
+The gate now runs its copies in parallel and does exactly that: `run_rows` brackets the batch in `set -m`. The fix is that one line rather than any supervision by hand, and it only bites a suite that tests signal handling, which this one does because `bisect-probe` has to tell a crash from a person pressing Ctrl-C
 
 The failure at least announces itself. The danger is reading it as a load problem and relaxing the check
 

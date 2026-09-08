@@ -1107,15 +1107,31 @@ check_proofs() {
   # pattern drifted from t.sh would otherwise leave a pristine copy, and the pristine copy
   # passes, which reads exactly like a defect that was caught.
   planted=0
+  rows=0
+  rows_dir="$work/rows"
+  mkdir -p "$rows_dir"
+  : >"$rows_dir/names"
+  # The rows are written down here and run below, in parallel. They are independent by
+  # construction — a copy each, its own defect, its own verdict — and running them one at a
+  # time was almost the whole gate: 94 percent of it, and it grows with every proof added.
   plant() { # plant HALF NAME FRAGMENT DESCRIPTION MUTATOR FILE ARGS...
+    local half="$1" name="$2"
+    [[ "$mode" == all || "$mode" == "$half" ]] || return 0
+    # Two rows with one name would share a copy, and the second would inherit the first's
+    # defect on top of its own — which is how a proof once failed for another's reason. The
+    # names file rather than the directory, because no directory exists until the row runs
+    ! grep -qxF -- "$name" "$rows_dir/names" ||
+      fail "plant: the name '$name' is used by two rows"
+    printf '%s\n' "$name" >>"$rows_dir/names"
+    rows=$((rows + 1))
+    local a
+    for a in "$@"; do printf '%s\0' "$a"; done >"$(printf '%s/row-%04d' "$rows_dir" "$rows")"
+  }
+
+  plant_run() { # plant_run HALF NAME FRAGMENT DESCRIPTION MUTATOR FILE ARGS...
     local half="$1" name="$2" want="$3" what="$4" how="$5" file="$6"
     shift 6
-    [[ "$mode" == all || "$mode" == "$half" ]] || return 0
     local dir="$work/plant-$name"
-    echo "== able to fail: $what"
-    # Two rows with one name would share a copy, and the second would inherit the first's
-    # defect on top of its own — which is how a proof once failed for another's reason
-    [[ ! -e "$dir" ]] || fail "plant: the name '$name' is used by two rows"
     copy "$dir"
     case "$how" in
       append) printf '%s' "$1" >>"$dir/$file" ;;
@@ -1137,7 +1153,77 @@ check_proofs() {
     esac
     [[ ! -x "$file" || ! -e "$dir/$file" ]] || chmod +x "$dir/$file"
     catches "$dir" "$want" "$what" "$half"
-    planted=$((planted + 1))
+  }
+
+  # The description of a row, for the line the parent prints in table order
+  row_what() { # row_what FILE
+    local a n=0
+    while IFS= read -r -d '' a; do
+      n=$((n + 1))
+      ((n != 4)) || {
+        printf '%s' "$a"
+        return 0
+      }
+    done <"$1"
+    fail "a planted row has no description — the row file is malformed"
+  }
+
+  run_rows() {
+    ((rows > 0)) || fail "no defect was planted for mode '$mode' — the falsification table is empty"
+    # One job per core. `nproc` is GNU, `sysctl` is the BSD on a macOS runner, and neither is
+    # worth failing over: a serial run is slow, not wrong.
+    local width
+    width=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    [[ "$width" =~ ^[0-9]+$ ]] && ((width > 0)) || width=4
+    local i=0 batch f k st
+    local -a pids=() idx=()
+    # Job control, because a background job of a shell without it has SIGINT set to ignore,
+    # every process it spawns inherits that, and the copies assert what bisect-probe makes
+    # of a command killed by one: without this the probes report 0 and prove nothing
+    set -m
+    while ((i < rows)); do
+      pids=()
+      idx=()
+      batch=0
+      while ((batch < width && i < rows)); do
+        i=$((i + 1))
+        f=$(printf '%s/row-%04d' "$rows_dir" "$i")
+        # Each row keeps its own stdout, stderr and status: `fail` inside a background
+        # subshell ends that subshell and nothing else, so a refusal nobody writes down is
+        # a refusal lost, and the run would go green on a proof that never proved anything
+        (
+          args=()
+          while IFS= read -r -d '' a; do args+=("$a"); done <"$f"
+          plant_run "${args[@]}"
+        ) >"$f.out" 2>"$f.err" &
+        pids+=("$!")
+        idx+=("$i")
+        batch=$((batch + 1))
+      done
+      # Waited on by pid rather than with a bare `wait`, which returns nothing about which
+      # job failed — and a status not read is a failure not seen
+      for k in "${!pids[@]}"; do
+        st=0
+        wait "${pids[$k]}" || st=$?
+        printf '%s\n' "$st" >"$(printf '%s/row-%04d.status' "$rows_dir" "${idx[$k]}")"
+      done
+    done
+    set +m
+    local failures=0
+    for ((i = 1; i <= rows; i++)); do
+      f=$(printf '%s/row-%04d' "$rows_dir" "$i")
+      echo "== able to fail: $(row_what "$f")"
+      # No status file at all means the job never reported, which is not a pass
+      [[ -f "$f.status" ]] || fail "$(row_what "$f"): the copy never reported a status"
+      if [[ "$(cat "$f.status")" == 0 ]]; then
+        planted=$((planted + 1))
+      else
+        failures=$((failures + 1))
+        cat "$f.err" >&2
+      fi
+    done
+    ((failures == 0)) ||
+      fail "$failures planted defect(s) did not prove what they were written for — their refusals are above"
   }
 
   # shellcheck disable=SC2016  # every $ below is t.sh's own source text being matched, not an expansion
@@ -1306,6 +1392,9 @@ check_proofs() {
     plant behaviour bash4-mapfile "expected 79, got 64" "a harness reading its markers with mapfile" \
       sed t.sh 's/^    while IFS= read -r line; do MARKER_PATTERNS+=("\$line"); done < <(read_markers "\$file")$/    mapfile -t MARKER_PATTERNS < <(read_markers "$file")/' 'mapfile -t MARKER_PATTERNS'
   fi
+
+  # Every row of the table is written down by now; this is where they run
+  run_rows
 
   # Two mutations, so a hand-written block: the duplicate has to be present in the set's
   # own fixture too, or the copy fails on the dead-entry rule first and the duplicate rule
