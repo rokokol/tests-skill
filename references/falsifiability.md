@@ -46,11 +46,18 @@ The safety properties that make it something you can run on a Friday:
 ```yaml
 strategy:
   matrix:
+    # Only the length of this list matters; job-total below reads it, so the width
+    # is written once and widening the matrix needs no other edit
     shard: [1, 2, 3, 4]
 steps:
   - uses: actions/checkout@v7
-  - run: t.sh falsify --shard ${{ matrix.shard }}/4 -- <the suite>
+  - run: t.sh falsify --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL" -- <the suite>
+    env:
+      SHARD_INDEX: ${{ strategy.job-index }}
+      SHARD_TOTAL: ${{ strategy.job-total }}
 ```
+
+Keep N well under the number of defects. Every shard runs the unbroken suite first, so a run of `D` defects split `N` ways costs `D/N + 1` suite runs against `D + 1`, and the baseline is the part that does not divide: measured at eight defects, two shards took 1.81 times less wall time and four took 3.00, against 1.80 and 3.00 from that arithmetic. A matrix as wide as the list is the pathological case — twenty shards over twenty defects spend half of every job on the baseline and return about twice, not twenty times.
 
 ## Writing the defect list
 
