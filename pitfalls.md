@@ -16,6 +16,10 @@ Sixteen behaviour halves run at once finished in 11 s against 9.7 s for one alon
 
 What a fixed wait did threaten was meaning. The interrupt check slept 0.5 s before signalling, and `falsify` times the unbroken suite before it edits anything, so the signal landed during the baseline: at the kill, `impl.sh` was pristine and no defect was in flight, three runs out of three, and the two assertions about restoring the source were comparing an untouched file against its own copy. The marker `falsify` writes in `falsify.out/in-flight` arrives at 1.10 s, idle and under sixteen concurrent runs alike, so no sleep short enough to be tolerable was ever long enough to be right. Wait for a state the program announces, not for a duration
 
+## A local in a new subcommand collides with a global shellcheck already knows
+
+`t.sh` is one file, so shellcheck sees every function's locals at once and takes a name used as an array in one and as a scalar in another for a mistake. Adding `cmd_pollute` cost three renames on that alone: `set` shadows the builtin, `first` is a scalar in `falsify`, and `cmd` is the dispatcher's own variable at the bottom of the file. The warnings point at the *other* use, which is why they read as unrelated. Pick names nothing else in the file uses, and run `shellcheck` before running anything else
+
 ## A re-raised signal still runs the EXIT trap
 
 The idiom for a signal handler is to clean up, reset the trap and re-raise — `trap - INT; kill -INT $$` — and it is easy to assume the script then dies without its EXIT trap. It does not: bash runs EXIT anyway, verified on a five-line script. So a copy planted to prove that the INT handler restores a file will pass with the restore stripped from INT alone, because EXIT restores it instead. Take the cleanup off every trap, or prove nothing

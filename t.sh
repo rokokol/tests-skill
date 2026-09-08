@@ -513,6 +513,104 @@ cmd_bisect_probe() {
 # owner and an expiry — and this is the part a gate can hold: a row past its expiry is a
 # decision nobody made, and a date that is not a date is a row that can never expire, which
 # is the same silence an unknown config key gives.
+# A test that passes alone and fails in the suite was polluted by something that ran
+# before it. references/debugging.md gives the method — halve the order the way git bisect
+# halves commits — and this is that, mechanically. The candidates come in on stdin, one
+# test per line in the order they run, which is what a collector prints:
+#
+#   pytest --collect-only -q | t.sh pollute tests/test_sync.py::test_retry -- pytest
+#
+# CMD is given the selection as trailing arguments, so it has to be a runner that takes a
+# list of tests that way — pytest, vitest, jest, phpunit. `go test -run` does not, and a
+# wrapper that turns a list into its own selector is the adopter's to write.
+cmd_pollute() { # pollute [-l DIR] [-m SET] [-p PATTERN] VICTIM -- CMD...
+  local victim=""
+  local -a pass=() runner=()
+  while (($#)); do
+    case "$1" in
+      -l | -m | -p | -t)
+        pass+=("$1" "${2:?$1 needs a value}")
+        shift 2
+        ;;
+      --)
+        shift
+        runner=("$@")
+        break
+        ;;
+      -*) die "pollute: no such flag: $1" ;;
+      *)
+        [[ -z "$victim" ]] || die "pollute: only one victim may be given"
+        victim="$1"
+        shift
+        ;;
+    esac
+  done
+  [[ -n "$victim" ]] || die "pollute: needs the test that fails in the suite and passes alone"
+  ((${#runner[@]} > 0)) || die "pollute: the command goes after -- (t.sh pollute VICTIM -- pytest)"
+
+  local -a cands=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" != "$victim" ]] || continue
+    cands+=("$line")
+  done
+  ((${#cands[@]} > 0)) ||
+    die "pollute: no candidates on stdin — give the tests that run before the victim, one per line"
+
+  # Reads as an ordinary run, so a suite that exits 0 while its log says otherwise counts
+  # as a failure here too, which is the whole reason run exists
+  fails_after() { # fails_after TEST... -> true when the victim fails with these before it
+    local st=0
+    (cmd_run "${pass[@]+"${pass[@]}"}" -- "${runner[@]}" "$@" "$victim") >/dev/null 2>&1 || st=$?
+    ((st != 0))
+  }
+
+  # Both ends first, because a search whose premises do not hold finds a confident answer to
+  # the wrong question: a victim that fails by itself is not polluted, and one that survives
+  # the whole order has nothing to find
+  local st=0
+  (cmd_run "${pass[@]+"${pass[@]}"}" -- "${runner[@]}" "$victim") >/dev/null 2>&1 || st=$?
+  ((st == 0)) || {
+    printf 't.sh: pollute: %s fails on its own (exit %s) — that is a broken test, not a polluted one\n' \
+      "$victim" "$st" >&2
+    return 85
+  }
+  fails_after "${cands[@]}" || {
+    printf 'pollute: %s passes with all %s candidate(s) before it — there is nothing to find in this order\n' \
+      "$victim" "${#cands[@]}"
+    return 0
+  }
+
+  # Halve, keep the half that still reproduces
+  local -a narrowed=("${cands[@]}") left=() right=()
+  local half
+  while ((${#narrowed[@]} > 1)); do
+    half=$((${#narrowed[@]} / 2))
+    left=("${narrowed[@]:0:half}")
+    right=("${narrowed[@]:half}")
+    if fails_after "${left[@]}"; then
+      narrowed=("${left[@]}")
+    elif fails_after "${right[@]}"; then
+      narrowed=("${right[@]}")
+    else
+      # Neither half on its own does it, so the pollution needs more than one of them
+      # together. Saying so beats halving on and naming whichever test the split happened
+      # to leave holding it
+      printf 'POLLUTED  %s needs more than one of these together:\n' "$victim"
+      printf '          %s\n' "${narrowed[@]}"
+      echo
+      printf 'pollute: narrowed to %s test(s), and no half of them reproduces it alone\n' "${#narrowed[@]}" >&2
+      return 82
+    fi
+  done
+
+  printf 'POLLUTED  %s fails when %s has run before it\n' "$victim" "${narrowed[0]}"
+  echo
+  printf 'pollute: %s of %s candidate(s) left after halving — run the two together to see it\n' \
+    "${#narrowed[@]}" "${#cands[@]}"
+}
+
 cmd_quarantine() { # quarantine [--on YYYY-MM-DD] [FILE]
   local on="" file=""
   while (($#)); do
@@ -1581,6 +1679,7 @@ t.sh — the local test harness: one subcommand per question a test run raises
   t.sh flaky N [FLAGS] -- CMD...       do N runs of the same code disagree
   t.sh focused [--any-file] [PATH...]  is a `.only` left in the source, so most of the suite is skipped
   t.sh quarantine [FILE]               is a test out of the gate past the date somebody promised to look
+  t.sh pollute VICTIM -- CMD...        which earlier test makes this one fail, by halving the order
   t.sh bisect GOOD [FLAGS] -- CMD...   which commit between GOOD and HEAD broke it
   t.sh falsify [FLAGS] [FILTER] -- CMD...
                                        which guards the suite would not notice being broken
@@ -1650,6 +1749,33 @@ show it. Where the switch lives in a config instead, forbid it there: vitest's
 `allowOnly: false`, playwright's `forbidOnly: true`, eslint's `jest/no-focused-tests`.
 
 Exit: 0 when the source holds none; 80 when it holds any, with every line named.
+EOF
+}
+
+help_pollute() {
+  cat <<'EOF'
+t.sh pollute [-l DIR] [-m SET] [-p PATTERN] [-t N] VICTIM -- CMD...
+
+A test that passes alone and fails in the suite was polluted by something that ran before
+it. This halves the order the way bisect halves commits, and names the test that does it.
+
+The candidates arrive on stdin, one per line, in the order they run — which is what a
+collector prints:
+
+  pytest --collect-only -q | t.sh pollute tests/test_sync.py::test_retry -- pytest
+
+CMD is given the selection as trailing arguments, so it must be a runner that takes a list
+of tests that way: pytest, vitest, jest, phpunit. `go test -run` takes a regex instead, and
+turning a list into one is a wrapper the adopter writes.
+
+Each probe goes through `run`, so a suite that exits 0 while its log says otherwise counts
+as a failure here too. Both ends are checked before any halving: a victim that fails by
+itself is a broken test rather than a polluted one, and a victim that survives the whole
+order has nothing to find.
+
+Exit: 0 when it names the test, or when the order holds nothing to find; 82 when no single
+test explains it and the smallest reproducing set is printed instead; 85 when the victim
+fails on its own.
 EOF
 }
 
@@ -1785,6 +1911,7 @@ error, pytest uses 2 to 5, cargo-nextest exits 4 for "no tests ran".
   88  a defect, or the fix taken away, only stopped the build (falsify, prove)
   80  a focus modifier was left in the source, so most of the suite will not run (focused)
   81  a quarantined test is past the date somebody promised to look at it (quarantine)
+  82  the order was halved and no single test explains the pollution (pollute)
   89  only commits that could not answer are left between good and bad (bisect)
 EOF
 }
@@ -1793,9 +1920,9 @@ cmd_help() {
   local topic="${1:-}"
   case "$topic" in
     '') help_general ;;
-    run | flaky | focused | quarantine | bisect | bisect-probe | falsify | prove) "help_${topic//-/_}" ;;
+    run | flaky | focused | quarantine | pollute | bisect | bisect-probe | falsify | prove) "help_${topic//-/_}" ;;
     codes | exit | status) help_codes ;;
-    *) die "help: no such topic '$topic' — run, flaky, focused, quarantine, bisect, falsify, prove, codes" ;;
+    *) die "help: no such topic '$topic' — run, flaky, focused, quarantine, pollute, bisect, falsify, prove, codes" ;;
   esac
 }
 
@@ -1806,6 +1933,7 @@ case "$cmd" in
   flaky) cmd_flaky "$@" ;;
   focused) cmd_focused "$@" ;;
   quarantine) cmd_quarantine "$@" ;;
+  pollute) cmd_pollute "$@" ;;
   bisect) cmd_bisect "$@" ;;
   bisect-probe) cmd_bisect_probe "$@" ;;
   falsify) cmd_falsify "$@" ;;

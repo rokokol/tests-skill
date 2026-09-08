@@ -475,6 +475,70 @@ check_behaviour() {
     >/dev/null 2>&1 || status=$?
   ((status == 86)) || fail "flaky missed a command whose runs disagreed (got $status)"
 
+  echo "== pollute halves the order and names the test that poisons another"
+  # The runner here is a shell script rather than a real suite: what is being checked is the
+  # halving and the two premises it rests on, not anybody's pytest
+  po="$work/pollute"
+  mkdir -p "$po"
+  cat >"$po/suite.sh" <<'POLLUTE'
+#!/bin/sh
+poisoned=0
+for t in "$@"; do
+  [ "$t" = poison ] && poisoned=1
+  if [ "$t" = victim ] && [ "$poisoned" = 1 ]; then
+    echo "1 failed: victim"
+    exit 1
+  fi
+done
+echo "$# passed"
+POLLUTE
+  cat >"$po/broken.sh" <<'POLLUTE'
+#!/bin/sh
+for t in "$@"; do [ "$t" = victim ] && { echo "1 failed: victim"; exit 1; }; done
+echo "$# passed"
+POLLUTE
+  cat >"$po/pair.sh" <<'POLLUTE'
+#!/bin/sh
+p=0
+q=0
+for t in "$@"; do
+  [ "$t" = p1 ] && p=1
+  [ "$t" = p2 ] && q=1
+  if [ "$t" = victim ] && [ "$p" = 1 ] && [ "$q" = 1 ]; then
+    echo "1 failed: victim"
+    exit 1
+  fi
+done
+echo "$# passed"
+POLLUTE
+  status=0
+  po_out=$(printf 'a\nb\nc\npoison\nd\ne\nf\ng\n' | tsh pollute victim -l "$work/logs" -- sh "$po/suite.sh" 2>&1) || status=$?
+  ((status == 0)) || fail "pollute exited $status where one of eight candidates poisons the victim (want 0):"$'\n'"$po_out"
+  grep -q 'fails when poison has run before it' <<<"$po_out" ||
+    fail "pollute did not name the polluter among eight candidates:"$'\n'"$po_out"
+  # An order with nothing wrong in it is an answer, not a failure
+  status=0
+  po_out=$(printf 'a\nb\nc\n' | tsh pollute victim -l "$work/logs" -- sh "$po/suite.sh" 2>&1) || status=$?
+  ((status == 0)) || fail "pollute exited $status on an order holding no polluter (want 0):"$'\n'"$po_out"
+  grep -q 'nothing to find' <<<"$po_out" || fail "pollute did not say the order holds nothing:"$'\n'"$po_out"
+  # Both premises, because a search whose premises do not hold answers the wrong question
+  # confidently: a victim that fails alone is broken rather than polluted
+  status=0
+  po_out=$(printf 'a\nb\n' | tsh pollute victim -l "$work/logs" -- sh "$po/broken.sh" 2>&1) || status=$?
+  ((status == 85)) || fail "pollute exited $status on a victim that fails by itself (want 85):"$'\n'"$po_out"
+  # And when no single test explains it, saying so beats naming whichever the split left
+  status=0
+  po_out=$(printf 'p1\na\nb\np2\n' | tsh pollute victim -l "$work/logs" -- sh "$po/pair.sh" 2>&1) || status=$?
+  ((status == 82)) || fail "pollute exited $status where two tests together poison the victim (want 82):"$'\n'"$po_out"
+  grep -q 'needs more than one' <<<"$po_out" ||
+    fail "pollute named a single test for a pollution that needs two:"$'\n'"$po_out"
+  status=0
+  printf 'a\n' | tsh pollute victim -l "$work/logs" sh "$po/suite.sh" >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "pollute accepted a command that was not put after -- (got $status)"
+  status=0
+  printf '' | tsh pollute victim -l "$work/logs" -- sh "$po/suite.sh" >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "pollute accepted an empty candidate list, which can prove nothing (got $status)"
+
   echo "== quarantine refuses a row nobody came back to, and one that can never come up"
   # A deadline is the whole point of the file: without one, a test taken out of the gate is
   # deleted with extra steps. --on is what lets this be checked without waiting for a date
@@ -1452,6 +1516,12 @@ check_proofs() {
     # is the claim the clause exists to stop being made
     # A scan that reports nothing reads exactly like a clean tree, which is the shape of
     # guard this harness exists to refuse — so the emptied pattern list has to be fatal
+    # Both premises, because a search that skips them answers the wrong question with
+    # confidence: a victim already broken would have its first candidate named as the cause
+    plant behaviour unpremised "on a victim that fails by itself" "a pollute that never checks the victim passes alone" \
+      sed t.sh 's/^  ((st == 0)) || {$/  true || {/' 'true || {'
+    plant behaviour halfblind "exited 0 where two tests" "a pollute that names a single test for a pollution needing two" \
+      sed t.sh 's/^    elif fails_after "\${right\[@\]}"; then$/    elif true; then/' 'elif true; then'
     plant behaviour unexpired "did not name the row past its expiry" "a quarantine that never calls a deadline passed" \
       sed t.sh 's/^      if (cell\[ecol\] < today) {$/      if (0) {/' 'if (0) {'
     plant behaviour undated-ok "can never come up for review" "a quarantine that accepts an expiry which is not a date" \
@@ -1543,8 +1613,8 @@ check_proofs() {
   # unnoticed. These are the counts with that block skipped.
   case "$mode" in
     lint) want_planted=21 ;;
-    behaviour) want_planted=37 ;;
-    all) want_planted=58 ;;
+    behaviour) want_planted=39 ;;
+    all) want_planted=60 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
