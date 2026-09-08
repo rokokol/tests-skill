@@ -1,0 +1,28 @@
+name: upstream
+
+# The marker sets are checked against fixtures by the gate, and against the tools by this.
+# Fixtures do not move; PHPUnit, VSTest and surefire do, and a marker whose line was renamed
+# upstream stops catching anything without a word — every run stays green and the check it
+# stood for is gone. That is what runs here, weekly.
+#
+# Deliberately not part of ci.yml: this needs a network and several hundred megabytes of
+# toolchains, and a red run here means the world moved rather than that somebody's commit is
+# wrong. Keeping it off pull requests keeps a contributor from being blamed for PHPUnit.
+on:
+  schedule:
+    # Monday morning, so a finding has a week in front of it rather than a weekend
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: the marker sets against today's runners
+        run: ./tests/upstream.sh

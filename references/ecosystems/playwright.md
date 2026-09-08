@@ -44,7 +44,7 @@ The tests here are the slow layer, so a defect list for them is short and aimed 
 
 No `markers/playwright.txt` ships, and not for want of looking. Playwright 1.61 was run through every shape that exits 0 while answering about less than it appears to, and none of them leaves a line a marker could match:
 
-- **`--pass-with-no-tests`, with nothing to run.** Output is empty. Not a warning, not a summary — nothing at all, and exit 0. There is no text to match, because there is no text
+- **`--pass-with-no-tests`, with nothing to run.** One blank line, one byte, and exit 0. Not a warning, not a summary, not a count — there is no text to match because there is no text
 - **A `test.only` left in a file.** The run prints `Running 1 test` and `1 passed`, exits 0, and says nothing whatever about the tests it dropped. Both lines are what a genuinely one-test run prints
 - **Every test skipped.** `2 skipped`, exit 0. The only line that names it is the skip count, and a healthy suite skips tests for a browser it does not have on this runner — a marker there would cry wolf
 

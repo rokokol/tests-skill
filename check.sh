@@ -22,7 +22,7 @@ cd "$HERE"
 
 # One source of truth for what gets linted. A second copy of this list drifts, and a
 # drifted list lies about what was checked.
-scripts=(t.sh check.sh check-skill.sh check-pins.sh templates/defects.sh)
+scripts=(t.sh check.sh check-skill.sh check-pins.sh templates/defects.sh tests/upstream.sh)
 
 # The skill's own name, as the frontmatter, the readme and the symlink all spell it
 skill_name=tests

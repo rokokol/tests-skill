@@ -20,6 +20,11 @@
 #
 # Adding one: put a real line from a real run into the lying fixture in the same commit,
 # and make sure the marker is the shortest text that identifies it.
+#
+# Fixtures do not move and the tools do. tests/upstream.sh runs the real runners and asks
+# whether each marker still matches a real lie and still stays quiet on a real healthy run —
+# a line renamed upstream otherwise stops catching anything without a word, and every run
+# stays green. It needs a network, so it is not part of check.sh; CI runs it weekly.
 
 # the suite never ran
 no tests ran
