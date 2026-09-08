@@ -475,6 +475,47 @@ check_behaviour() {
     >/dev/null 2>&1 || status=$?
   ((status == 86)) || fail "flaky missed a command whose runs disagreed (got $status)"
 
+  echo "== quarantine refuses a row nobody came back to, and one that can never come up"
+  # A deadline is the whole point of the file: without one, a test taken out of the gate is
+  # deleted with extra steps. --on is what lets this be checked without waiting for a date
+  qd="$work/quarantine"
+  mkdir -p "$qd"
+  # shellcheck disable=SC2016  # markdown backticks in a fixture table, not a substitution
+  {
+    printf '# Quarantine\n\n'
+    printf '| test | since | category | suspected cause | owner | expires | restore |\n'
+    printf '|---|---|---|---|---|---|---|\n'
+    printf '| `tests/test_sync.py::test_retry` | 2026-09-07 | timing | a sleep for a socket close | @name | 2026-09-21 | remove the mark |\n'
+    printf '| `tests/test_api.py::test_backoff` | 2026-08-01 | order | leaks a global | @name | 2026-08-15 | remove the mark |\n'
+    printf '| `tests/test_slow.py::test_batch` | 2026-09-01 | resource | needs a big machine | @name | soon | remove the mark |\n'
+  } >"$qd/quarantine.md"
+  status=0
+  q_out=$(tsh quarantine --on 2026-09-08 "$qd/quarantine.md" 2>&1) || status=$?
+  ((status == 81)) || fail "quarantine exited $status on a table holding an expired row (want 81):"$'\n'"$q_out"
+  grep -q 'test_backoff' <<<"$q_out" || fail "quarantine did not name the row past its expiry:"$'\n'"$q_out"
+  grep -q 'test_batch' <<<"$q_out" ||
+    fail "quarantine accepted a row whose expiry is not a date — such a row can never come up for review:"$'\n'"$q_out"
+  ! grep -q 'test_retry' <<<"$q_out" ||
+    fail "quarantine reported a row still inside its date — a gate that cries wolf gets switched off:"$'\n'"$q_out"
+  # The same table read from before that deadline: the expired row is not expired yet
+  status=0
+  q_out=$(tsh quarantine --on 2026-08-01 "$qd/quarantine.md" 2>&1) || status=$?
+  ! grep -q 'test_backoff' <<<"$q_out" ||
+    fail "quarantine called a row expired on a date before its expiry:"$'\n'"$q_out"
+  # A table with no expiry column is not a quarantine file, and saying so is better than
+  # reading zero rows and calling it clean
+  # shellcheck disable=SC2016  # markdown backticks in a fixture table, not a substitution
+  printf '# Quarantine\n\n| test | owner |\n|---|---|\n| `t` | @name |\n' >"$qd/noexpiry.md"
+  status=0
+  tsh quarantine --on 2026-09-08 "$qd/noexpiry.md" >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "quarantine accepted a table with no expires column (got $status)"
+  status=0
+  tsh quarantine --on 2026-09-08 "$qd/not-here.md" >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "quarantine accepted a file that does not exist (got $status)"
+  status=0
+  tsh quarantine --on soon "$qd/quarantine.md" >/dev/null 2>&1 || status=$?
+  ((status == 64)) || fail "quarantine accepted an --on that is not a date (got $status)"
+
   echo "== focused finds the modifier that runs one test and skips the rest of its file"
   # No runner reports a stray `.only`: jest and vitest print a skip count, which is what a
   # suite skipping a platform test prints too, and both exit 0. It cannot be a marker, so it
@@ -1379,6 +1420,10 @@ check_proofs() {
     # is the claim the clause exists to stop being made
     # A scan that reports nothing reads exactly like a clean tree, which is the shape of
     # guard this harness exists to refuse — so the emptied pattern list has to be fatal
+    plant behaviour unexpired "did not name the row past its expiry" "a quarantine that never calls a deadline passed" \
+      sed t.sh 's/^      if (cell\[ecol\] < today) {$/      if (0) {/' 'if (0) {'
+    plant behaviour undated-ok "can never come up for review" "a quarantine that accepts an expiry which is not a date" \
+      sed t.sh 's/^      if (cell\[ecol\] !~ \/\^\[0-9\]\[0-9\]\[0-9\]\[0-9\]-\[0-9\]\[0-9\]-\[0-9\]\[0-9\]\$\/) {$/      if (0) { # planted/' '# planted'
     plant behaviour blindscan "exited 70 on a tree" "a focus scan with no pattern to scan for" \
       sed t.sh "s/^  cat <<'FOCUS'\$/  : <<'FOCUS'/" ": <<'FOCUS'"
     plant behaviour unfocused "exited 0 on a tree" "a focused that finds them and says nothing went wrong" \
@@ -1488,8 +1533,8 @@ check_proofs() {
   # unnoticed. These are the counts with that block skipped.
   case "$mode" in
     lint) want_planted=21 ;;
-    behaviour) want_planted=35 ;;
-    all) want_planted=56 ;;
+    behaviour) want_planted=37 ;;
+    all) want_planted=58 ;;
   esac
   ((planted >= want_planted)) ||
     fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"

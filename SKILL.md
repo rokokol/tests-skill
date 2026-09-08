@@ -48,6 +48,7 @@ These are choices, and [references/layers.md](references/layers.md) gives the cr
 | `t.sh run -- CMD` | did it pass — status kept honest, whole log kept, log read even at 0 |
 | `t.sh flaky N -- CMD` | do repeated runs of the same code disagree |
 | `t.sh focused [PATH...]` | is a `.only` left in the source, so the runner skips most of the suite and exits 0 |
+| `t.sh quarantine [FILE]` | is a test out of the gate past the date somebody promised to look at it |
 | `t.sh bisect GOOD -- CMD` | which commit broke it, skipping the ones that cannot answer |
 | `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
 | `t.sh prove [REF] -- CMD` | does the commit's own test go red when its fix is taken away |
@@ -58,7 +59,7 @@ The command is always explicit, after `--`: a harness that guesses what your sui
 
 ```
 SKILL.md              this file — the core, the modes, the harness, the checklist
-t.sh                  run / flaky / focused / bisect / falsify / prove
+t.sh                  run / flaky / focused / quarantine / bisect / falsify / prove
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, ecosystems/ for the per-language specifics, sources.md for the evidence
 templates/            defects.sh for falsify, t.conf for a repository's own policy

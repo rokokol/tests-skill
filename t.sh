@@ -508,6 +508,91 @@ cmd_bisect_probe() {
 # that needed it, and none of them is visible in a log. The ones that live in a config are
 # forbidden there — vitest's allowOnly, playwright's forbidOnly. The ones that live in the
 # source are found here.
+# A test taken out of the gate with no date on it is not quarantined, it is deleted with
+# extra steps. references/curation.md gives the file its shape — one row per test, with an
+# owner and an expiry — and this is the part a gate can hold: a row past its expiry is a
+# decision nobody made, and a date that is not a date is a row that can never expire, which
+# is the same silence an unknown config key gives.
+cmd_quarantine() { # quarantine [--on YYYY-MM-DD] [FILE]
+  local on="" file=""
+  while (($#)); do
+    case "$1" in
+      --on)
+        on="${2:?--on needs a date}"
+        [[ "$on" =~ ^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$ ]] ||
+          die "quarantine: --on needs a date as YYYY-MM-DD, got '$on'"
+        shift 2
+        ;;
+      --) shift ;;
+      -*) die "quarantine: no such flag: $1" ;;
+      *)
+        [[ -z "$file" ]] || die "quarantine: only one file may be given"
+        file="$1"
+        shift
+        ;;
+    esac
+  done
+  file="${file:-tests/quarantine.md}"
+  [[ -f "$file" ]] ||
+    die "quarantine: $file does not exist — a test taken out of the gate needs a row somewhere a person rereads"
+  on="${on:-$(date +%Y-%m-%d)}"
+
+  # The columns are found by their headings rather than counted, so the file stays readable
+  # and a column added in the middle does not silently shift what is being checked. ISO
+  # dates compare correctly as text, which is the whole reason the format asks for them.
+  local out
+  out=$(awk -v today="$on" '
+    /^[[:space:]]*\|/ {
+      n = split($0, cell, "|")
+      for (i = 1; i <= n; i++) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", cell[i]) }
+      if (!seen) {
+        for (i = 1; i <= n; i++) {
+          if (cell[i] == "expires") { ecol = i }
+          if (cell[i] == "test") { tcol = i }
+        }
+        if (ecol && tcol) { seen = 1 }
+        next
+      }
+      if (cell[ecol] ~ /^-+$/) { next }
+      if (cell[tcol] == "") { next }
+      rows++
+      if (cell[ecol] !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) {
+        printf "UNDATED   %s: expires is \"%s\", which is not a date, so this row can never come up for review\n", cell[tcol], cell[ecol]
+        bad++
+        next
+      }
+      if (cell[ecol] < today) {
+        printf "OVERDUE   %s: expired %s\n", cell[tcol], cell[ecol]
+        bad++
+      }
+    }
+    END {
+      if (!seen) { exit 1 }
+      printf "COUNT %d %d\n", rows, bad
+    }
+  ' "$file") || die "quarantine: $file has no table with a 'test' and an 'expires' column — see references/curation.md"
+
+  # The counts come back on the last line rather than through a second channel: a temporary
+  # file for two numbers is a temporary file to clean up on every path out of here
+  local tally rows bad
+  tally=${out##*$'\n'}
+  [[ "$tally" == COUNT\ * ]] || fatal "quarantine: the reader did not report a count"
+  out=${out%$'\n'"$tally"}
+  [[ "$out" != "$tally" ]] || out=""
+  tally=${tally#COUNT }
+  rows=${tally%% *}
+  bad=${tally##* }
+  [[ -n "$out" ]] || {
+    printf 'quarantine: %s row(s) in %s, none past its expiry as of %s\n' "$rows" "$file" "$on"
+    return 0
+  }
+  printf '%s\n' "$out"
+  echo
+  printf 'quarantine: %s of %s row(s) in %s are past review as of %s — a deadline that passed is a decision nobody made\n' \
+    "$bad" "$rows" "$file" "$on" >&2
+  return 81
+}
+
 focus_patterns() {
   # Two regexes rather than a list of fixed strings, for two reasons. A bare jasmine focus
   # name written as a literal, with its opening parenthesis,
@@ -1495,6 +1580,7 @@ t.sh — the local test harness: one subcommand per question a test run raises
   t.sh run [FLAGS] -- CMD...           did it pass: CMD's own status, the whole log kept and read even at 0
   t.sh flaky N [FLAGS] -- CMD...       do N runs of the same code disagree
   t.sh focused [--any-file] [PATH...]  is a `.only` left in the source, so most of the suite is skipped
+  t.sh quarantine [FILE]               is a test out of the gate past the date somebody promised to look
   t.sh bisect GOOD [FLAGS] -- CMD...   which commit between GOOD and HEAD broke it
   t.sh falsify [FLAGS] [FILTER] -- CMD...
                                        which guards the suite would not notice being broken
@@ -1564,6 +1650,26 @@ show it. Where the switch lives in a config instead, forbid it there: vitest's
 `allowOnly: false`, playwright's `forbidOnly: true`, eslint's `jest/no-focused-tests`.
 
 Exit: 0 when the source holds none; 80 when it holds any, with every line named.
+EOF
+}
+
+help_quarantine() {
+  cat <<'EOF'
+t.sh quarantine [--on YYYY-MM-DD] [FILE]
+
+Reads the quarantine table — `tests/quarantine.md` by default, the shape is in
+references/curation.md — and refuses a row nobody came back to. The columns are found by
+their headings, so a column added in the middle shifts nothing.
+
+  --on YYYY-MM-DD     judge the rows as of this date rather than today, which is how a
+                      gate checks the check without waiting for a deadline to pass
+
+Two rows are refused. One whose `expires` is before the date being judged: the deadline
+was a promise to look again, and it passed. And one whose `expires` is not a date at all,
+because a row that cannot expire never comes up for review — the same silence an unknown
+config key gives.
+
+Exit: 0 when every row is still within its date; 81 when any is not, with each named.
 EOF
 }
 
@@ -1678,6 +1784,7 @@ error, pytest uses 2 to 5, cargo-nextest exits 4 for "no tests ran".
   87  the defect list has drifted, or a declared exception was disproved (falsify)
   88  a defect, or the fix taken away, only stopped the build (falsify, prove)
   80  a focus modifier was left in the source, so most of the suite will not run (focused)
+  81  a quarantined test is past the date somebody promised to look at it (quarantine)
   89  only commits that could not answer are left between good and bad (bisect)
 EOF
 }
@@ -1686,9 +1793,9 @@ cmd_help() {
   local topic="${1:-}"
   case "$topic" in
     '') help_general ;;
-    run | flaky | focused | bisect | bisect-probe | falsify | prove) "help_${topic//-/_}" ;;
+    run | flaky | focused | quarantine | bisect | bisect-probe | falsify | prove) "help_${topic//-/_}" ;;
     codes | exit | status) help_codes ;;
-    *) die "help: no such topic '$topic' — run, flaky, focused, bisect, falsify, prove, codes" ;;
+    *) die "help: no such topic '$topic' — run, flaky, focused, quarantine, bisect, falsify, prove, codes" ;;
   esac
 }
 
@@ -1698,6 +1805,7 @@ case "$cmd" in
   run) cmd_run "$@" ;;
   flaky) cmd_flaky "$@" ;;
   focused) cmd_focused "$@" ;;
+  quarantine) cmd_quarantine "$@" ;;
   bisect) cmd_bisect "$@" ;;
   bisect-probe) cmd_bisect_probe "$@" ;;
   falsify) cmd_falsify "$@" ;;
