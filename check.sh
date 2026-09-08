@@ -787,11 +787,28 @@ DEFECTS
   # exec, so the PID below is t.sh's own and the signal reaches the trap being tested; and
   # under job control, because without it a script's background jobs IGNORE SIGINT, an
   # ignored signal cannot be trapped, and this check would find nothing to interrupt
+  flight="$fal/falsify.out/in-flight"
+  rm -f "$flight"
   set -m
   (cd "$fal" && exec "$BASH" "$HERE/t.sh" falsify -l "$work/logs" -- sh slow.sh) >"$work/interrupted.out" 2>&1 &
   falsify_pid=$!
   set +m
-  sleep 0.5
+  # The interrupt has to land while a mutant is on disk, or "the source was put back" is a
+  # claim about a file nothing had touched. `sleep 0.5` was that: falsify times the
+  # unbroken suite first, this one sleeps a second, and the marker naming the defect in
+  # flight was measured appearing at 1.10 s — idle and under sixteen concurrent runs alike.
+  # So the signal arrived during the baseline every time, and the two restore assertions
+  # below asserted that a pristine file was pristine. Waiting for the marker is the moment
+  # itself rather than a guess about how busy the machine is.
+  waited=0
+  while [[ ! -s "$flight" ]] && kill -0 "$falsify_pid" 2>/dev/null && ((waited < 400)); do
+    sleep 0.05
+    waited=$((waited + 1))
+  done
+  [[ -s "$flight" ]] ||
+    fail "falsify never named a defect in flight — the interrupt below would have had nothing to land on"
+  ! cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
+    fail "falsify says a defect is in flight while impl.sh is untouched — the restore checked below would be vacuous"
   kill -INT "$falsify_pid"
   status=0
   wait "$falsify_pid" || status=$?
@@ -1163,6 +1180,13 @@ check_proofs() {
       sed t.sh 's/^    \[\[ -z "\$complaint" \]\] || die "allow:.*$/    : "$complaint" # planted/' '# planted'
     plant behaviour carryon "carried on after an interrupt" "a falsify whose interrupt handler returns" \
       sed t.sh "s/^  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
+    # The other half of that trap. `carryon` above proves the re-raise; this proves the
+    # restore, which the check could not prove at all while the interrupt was landing during
+    # the baseline run with nothing yet mutated. Every trap loses restore_all, not just INT:
+    # bash runs the EXIT trap even when the script dies of a signal it re-raised itself, so
+    # stripping INT alone leaves EXIT to put the file back and the copy passes.
+    plant behaviour unrestored "did not put impl.sh back" "a falsify that does not restore the source it was interrupted over" \
+      sed t.sh "/^  trap /s/restore_all; //" "trap 'cleanup_worktree' EXIT"
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
       sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
     plant behaviour vacuous "want proven" "a prove that never takes the fix away" \
