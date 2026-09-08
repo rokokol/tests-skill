@@ -1227,26 +1227,47 @@ check_proofs() {
     shift 6
     local dir="$work/plant-$name"
     copy "$dir"
+    mutate "$dir" "$what" "$how" "$file" "$@"
+    catches "$dir" "$want" "$what" "$half"
+  }
+
+  # One mutation, and then any more introduced by --and. Two rows needed two files edited —
+  # a duplicate marker has to be in the set's own fixture too, or the copy fails on the
+  # dead-entry rule first — and they were hand-written blocks outside the table for it,
+  # which kept them out of the parallel pool and out of the count the table is held to.
+  mutate() { # mutate DIR DESCRIPTION HOW FILE ARGS... [--and HOW FILE ARGS...]
+    local dir="$1" what="$2" how="$3" file="$4"
+    shift 4
+    local -a args=()
+    while (($#)); do
+      [[ "$1" != --and ]] || break
+      args+=("$1")
+      shift
+    done
     case "$how" in
-      append) printf '%s' "$1" >>"$dir/$file" ;;
-      write) printf '%s' "$1" >"$dir/$file" ;;
+      append) printf '%s' "${args[0]}" >>"$dir/$file" ;;
+      write) printf '%s' "${args[0]}" >"$dir/$file" ;;
       sed)
-        sed "$1" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
-        grep -qF -- "$2" "$dir/$file" || fail "$what: the defect was not planted — '$2' is not in $file"
+        sed "${args[0]}" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
+        grep -qF -- "${args[1]}" "$dir/$file" || fail "$what: the defect was not planted — '${args[1]}' is not in $file"
         ;;
       awk)
-        awk "$1" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
-        grep -qF -- "$2" "$dir/$file" || fail "$what: the defect was not planted — '$2' is not in $file"
+        awk "${args[0]}" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
+        grep -qF -- "${args[1]}" "$dir/$file" || fail "$what: the defect was not planted — '${args[1]}' is not in $file"
         ;;
       drop)
-        grep -vF -- "$1" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
-        ! grep -qF -- "$1" "$dir/$file" || fail "$what: the defect was not planted — '$1' is still in $file"
+        grep -vF -- "${args[0]}" "$dir/$file" >"$dir/$file.new" && mv "$dir/$file.new" "$dir/$file"
+        ! grep -qF -- "${args[0]}" "$dir/$file" || fail "$what: the defect was not planted — '${args[0]}' is still in $file"
         ;;
       rm) rm -f "$dir/$file" ;;
       *) fail "plant: no such mutator '$how'" ;;
     esac
     [[ ! -x "$file" || ! -e "$dir/$file" ]] || chmod +x "$dir/$file"
-    catches "$dir" "$want" "$what" "$half"
+    # Whatever came after --and is another mutation of the same copy
+    ((${#@} == 0)) || {
+      shift
+      mutate "$dir" "$what" "$@"
+    }
   }
 
   # The description of a row, for the line the parent prints in table order
@@ -1357,6 +1378,17 @@ check_proofs() {
     # where this copy would then fail for the sed instead of for the defect
     plant lint dead-system "cannot be evaluated for" "a flake claiming a system nixpkgs dropped" \
       sed flake.nix 's/"aarch64-darwin"/"x86_64-darwin"/' '"x86_64-darwin"'
+    # Two files each: the duplicate has to be in the set's own lying fixture too, or the
+    # copy fails on the dead-entry rule first and the duplicate rule is never reached —
+    # which is exactly how this proof once passed without proving anything
+    plant lint dupe "repeats a marker that markers/default.txt" "a set repeating a default marker" \
+      append markers/go.txt $'No Tests Ran in 0.01s\n' \
+      --and append tests/fixtures/lying/go.log $'No Tests Ran in 0.01s\n'
+    # A default marker quiet on the pytest run and loud on the ctest one: the rule has to
+    # look at every ecosystem's healthy run, not the one it happened to start with
+    plant lint noisy-elsewhere "fires on tests/fixtures/clean/cpp.log" "a default marker that fires on another ecosystem's healthy run" \
+      append markers/default.txt $'Total Test time\n' \
+      --and append tests/fixtures/lying/default.log $'Total Test time (real) =   0.00 sec\n'
     plant lint dead "a dead entry guards nothing" "a marker matching nothing" \
       append markers/default.txt $'a marker matching nothing\n'
     plant lint noisy "it would redden healthy runs" "a marker that fires on a healthy run" \
@@ -1503,28 +1535,6 @@ check_proofs() {
 
   # Every row of the table is written down by now; this is where they run
   run_rows
-
-  # Two mutations, so a hand-written block: the duplicate has to be present in the set's
-  # own fixture too, or the copy fails on the dead-entry rule first and the duplicate rule
-  # is never reached — which is exactly how this proof was passing without proving anything
-  if [[ "$mode" != behaviour ]]; then
-    echo "== able to fail: a set repeating a default marker"
-    copy "$work/plant-dupe"
-    # In other letters and with a suffix, which an exact comparison would have let through
-    printf 'No Tests Ran in 0.01s\n' >>"$work/plant-dupe/markers/go.txt"
-    printf 'No Tests Ran in 0.01s\n' >>"$work/plant-dupe/tests/fixtures/lying/go.log"
-    catches "$work/plant-dupe" "repeats a marker that markers/default.txt" "a set repeating a default marker" lint
-    planted=$((planted + 1))
-
-    # A default marker quiet on the pytest run and loud on the ctest one: the rule has to
-    # look at every ecosystem's healthy run, not the one it happened to start with
-    echo "== able to fail: a default marker that fires on another ecosystem's healthy run"
-    copy "$work/plant-noisy-elsewhere"
-    printf 'Total Test time\n' >>"$work/plant-noisy-elsewhere/markers/default.txt"
-    printf 'Total Test time (real) =   0.00 sec\n' >>"$work/plant-noisy-elsewhere/tests/fixtures/lying/default.log"
-    catches "$work/plant-noisy-elsewhere" "fires on tests/fixtures/clean/cpp.log" "a default marker that fires on another ecosystem's healthy run" lint
-    planted=$((planted + 1))
-  fi
 
   # The table above is the proof; a table that lost its rows would prove nothing while
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
