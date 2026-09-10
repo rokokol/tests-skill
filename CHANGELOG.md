@@ -1,11 +1,12 @@
 # Changelog
 
-Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close
+Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
 ## 2026-09-10
 
 ### Changed
 
+- the description names the harness's newer questions — test pollution, a `.only` left behind, exit codes and `pipefail` — and trades a bare "regression", which also means a regression test, for "which commit broke it"
 - `SKILL.md` says how another repository takes `t.sh` and `markers/`: together, since `t.sh` reads its markers from the directory beside it, and through the ci skill's vendoring cascade rather than by hand, with a fix going here rather than into a copy. `t.sh`'s header says the same, so every copy carries it. `tests/t.conf` and `tests/defects.sh` stay the repository's own
 
 ### Fixed
@@ -18,10 +19,6 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 - agent-facing statements that were wrong: `dotnet.md` said `dotnet test` has no native switch for an empty run a few paragraphs after naming two; `cpp.md` put UBSan in the default set and ctest's empty-run marker in `markers/cpp.txt`, the other way round; `pytest.md` recommended `-p no:randomly` in the command beside a rule to randomise, and said `--exitfirst` can make an empty run exit 0 where pytest exits 5; `rust.md` quoted a panic marker the set no longer carries; `go.md` and `rust.md` placed the default markers in `t.sh`; `sources.md` credited a rule the skill replaced, committing the failing test on its own; the `t.conf` template listed six of the shipped marker sets and now points at `markers/`
 - `falsifiability.md` called five steps "the four-command version", the README still counted forty-six planted copies, and `debugging.md`, `flaky.md` and `curation.md` described halving the order and refusing an expired quarantine without naming `t.sh pollute` and `t.sh quarantine`, which do exactly that
 - comments that had drifted from their code: two command descriptions in `t.sh` sat above `cmd_pollute` instead of above `cmd_focused` and `cmd_quarantine`, two proof comments in `check.sh` sat above the wrong rows, and `tests/upstream.sh` claimed a marker check over Playwright runs that has no markers to check with
-
-### Changed
-
-- the description names the harness's newer questions — test pollution, a `.only` left behind, exit codes and `pipefail` — and trades a bare "regression", which also means a regression test, for "which commit broke it"
 
 ## 2026-09-07
 

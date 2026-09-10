@@ -129,6 +129,7 @@ templates/            defects.sh for falsify, t.conf for a repository's own poli
 check.sh              the self-testing gate, in a lint half and a behaviour half
 check-skill.sh        the ci skill's gate for a skill repository, vendored
 check-pins.sh         the ci skill's pin guard for the workflows, vendored
+vendor-sync.sh        the ci skill's tool that keeps the vendored copies byte-equal to their source, vendored
 tests/fixtures/       lying/ the runs the markers must catch, clean/ the healthy ones they must not
 ```
 
