@@ -5,7 +5,7 @@ name: upstream
 # upstream stops catching anything without a word — every run stays green and the check it
 # stood for is gone. That is what runs here, weekly.
 #
-# Deliberately not part of ci.yml: this needs a network and several hundred megabytes of
+# Deliberately not part of build.yml: this needs a network and several hundred megabytes of
 # toolchains, and a red run here means the world moved rather than that somebody's commit is
 # wrong. Keeping it off pull requests keeps a contributor from being blamed for PHPUnit.
 on:

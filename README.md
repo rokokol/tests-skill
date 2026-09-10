@@ -8,7 +8,7 @@
 ![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat&logo=gnubash&logoColor=white)
 ![Nix](https://img.shields.io/badge/Nix-flake-7EBAE4?style=flat&logo=nixos&logoColor=white)
 [![license](https://img.shields.io/badge/MIT-3DA639?style=flat)](LICENSE)
-[![ci](https://github.com/rokokol/tests-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/rokokol/tests-skill/actions/workflows/ci.yml)
+[![ci](https://github.com/rokokol/tests-skill/actions/workflows/build.yml/badge.svg)](https://github.com/rokokol/tests-skill/actions/workflows/build.yml)
 
 </div>
 

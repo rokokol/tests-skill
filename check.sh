@@ -22,7 +22,7 @@ cd "$HERE"
 
 # One source of truth for what gets linted. A second copy of this list drifts, and a
 # drifted list lies about what was checked.
-scripts=(t.sh check.sh check-skill.sh check-pins.sh templates/defects.sh tests/upstream.sh)
+scripts=(t.sh check.sh check-skill.sh check-pins.sh vendor-sync.sh templates/defects.sh tests/upstream.sh)
 
 # The skill's own name, as the frontmatter, the readme and the symlink all spell it
 skill_name=tests
@@ -115,8 +115,10 @@ check_lint() {
   fi
   # This repo follows its own advice about pinning: a job that resolves a tool at run time
   # changes behaviour with zero change in the repository. The guard is the ci skill's
-  # check-pins.sh, copied verbatim, which proves on every run that it catches each shape
-  # it claims to and stays quiet on the pinned spellings.
+  # check-pins.sh, vendored, which proves on every run that it catches each shape it
+  # claims to and stays quiet on the pinned spellings. Every vendored copy must still be
+  # the blob .github/vendor.lock records, so one edited here fails by name first.
+  ./vendor-sync.sh check
   ./check-pins.sh
   # And the pins have to be watched: a major tag moves within its major on its own, but
   # nothing says when GitHub retires the runtime an old major runs on, except a red run

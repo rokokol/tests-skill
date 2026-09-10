@@ -7,6 +7,14 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  # Called by vendor-sync.yml against its temp branch, so new vendored copies are checked by
+  # this file rather than by a copy of its commands
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -19,6 +27,8 @@ jobs:
       # check.sh builds its own throwaway histories to bisect, so it needs nothing of
       # this repository's history — a shallow clone is enough
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: cachix/install-nix-action@v31
       # The pin guard lives in check-pins.sh, run by the gate, and nowhere else: a second
       # copy of the pattern here drifted from the one there
@@ -34,6 +44,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - name: the behaviour half under the bash macOS ships
         env:
           T_CHECK_BASH32: "1"
