@@ -865,9 +865,9 @@ JS
   warm nixpkgs#playwright-test
   pw() { (cd "$d" && nix shell nixpkgs#playwright-test -c playwright "$@"); }
 
-  # There is no markers/playwright.txt, so `silent` is asserted against every other set:
-  # the day one of these shapes starts printing something a marker catches, the reference
-  # saying "there is no set, and here is why" has stopped being true
+  # There is no markers/playwright.txt, so no marker speaks for or against these runs: what
+  # holds the reference's "there is no set, and here is why" to the tool is the status each
+  # shape exits with and the blank output of --pass-with-no-tests, checked below
   run "$work/pw.pass" pw test --grep NoSuchTitle --pass-with-no-tests --reporter=list
   st=$?
   ((st == 0)) || note "playwright: --pass-with-no-tests exited $st — it refuses now, and the reference is stale"

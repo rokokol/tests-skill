@@ -69,18 +69,7 @@ What you pass on the command line adds to it: `-m` and `-p` append, `-l` and `T_
 
 The command's own status, passed through unchanged, is the answer in every case but the ones the harness exists to add, and those sit in a band no test runner uses: pytest's 2 to 5, GNU make's 2, `mix test`'s 2, cargo-nextest's 4 for "no tests ran" all collide with the low numbers the harness once used, and a bisect over a Makefile-driven suite skipped every failing commit because of it
 
-| Exit | Meaning |
-|---|---|
-| 64 | a usage error: a flag, the config, a missing `--`, an `allow` regex grep rejects |
-| 70 | the harness itself failed: a log it cannot write, a file it cannot put back |
-| 79 | `run`: the command exited 0 and its log says it did not do what a pass claims |
-| 83 | `falsify`: a defect survived; `prove`: the tests pass without the fix |
-| 84 | `falsify`, `prove`: the suite did not finish within the deadline |
-| 85 | `falsify`, `prove`: the suite was red, or never really ran, before any edit |
-| 86 | `flaky`: the runs disagreed with each other |
-| 87 | `falsify`: the defect list has drifted from the code |
-| 88 | `falsify`, `prove`: an edit only stopped the build, so the tests were never asked |
-| 89 | `bisect`: only commits that could not answer are left between good and bad |
+`t.sh help codes` lists every one of them, and it is the only list: the gate fails when `t.sh` exits a code that help does not name, so a table copied here could only fall behind it — as one did, three codes short
 
 The *kind* of verdict cannot ride on a number either — the suite's own 79 is not the harness's — so `run` writes it beside the log as `LOG.verdict`, one word, `pass`, `fail` or `lied`, and the other subcommands read that instead of guessing. A wrapper of your own can do the same
 

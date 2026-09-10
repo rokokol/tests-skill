@@ -8,6 +8,16 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 - `t.sh focused`, `quarantine` and `pollute` were missing from the README's harness table, from its layout line and from `t.sh`'s own header — three copies of a list that lives in the dispatch, each a few subcommands behind. The header now names `t.sh help` as the only list, and both layout lines point at it rather than restating it
 - `references/ecosystems/jvm.md` and `php.md` still said their marker sets did not exist yet, while `markers/jvm.txt` and `markers/php.txt` ship
+- **the full-stop rule read only the last character of a line**, so a bold sentence ending `.**` and a parenthesis ending `.)` kept theirs with the gate green. It sees through closing markup now, proven by two planted copies that passed before the change, and the two documents it newly caught are fixed
+- **the gate would have refused itself as root.** The rows root cannot prove, an unwritable log and an unwritten mutant, were left out as root while the floor on the table's size still expected them, so the behaviour half reported lost rows. Each is now counted as skipped by name and the floor holds planted plus skipped
+- `references/verdict.md` kept a hand copy of `t.sh help codes` that had fallen three codes behind, missing 80, 81 and 82; it points at the help now, which the gate already holds to what `t.sh` exits
+- agent-facing statements that were wrong: `dotnet.md` said `dotnet test` has no native switch for an empty run a few paragraphs after naming two; `cpp.md` put UBSan in the default set and ctest's empty-run marker in `markers/cpp.txt`, the other way round; `pytest.md` recommended `-p no:randomly` in the command beside a rule to randomise, and said `--exitfirst` can make an empty run exit 0 where pytest exits 5; `rust.md` quoted a panic marker the set no longer carries; `go.md` and `rust.md` placed the default markers in `t.sh`; `sources.md` credited a rule the skill replaced, committing the failing test on its own; the `t.conf` template listed six of the shipped marker sets and now points at `markers/`
+- `falsifiability.md` called five steps "the four-command version", the README still counted forty-six planted copies, and `debugging.md`, `flaky.md` and `curation.md` described halving the order and refusing an expired quarantine without naming `t.sh pollute` and `t.sh quarantine`, which do exactly that
+- comments that had drifted from their code: two command descriptions in `t.sh` sat above `cmd_pollute` instead of above `cmd_focused` and `cmd_quarantine`, two proof comments in `check.sh` sat above the wrong rows, and `tests/upstream.sh` claimed a marker check over Playwright runs that has no markers to check with
+
+### Changed
+
+- the description names the harness's newer questions — test pollution, a `.only` left behind, exit codes and `pipefail` — and trades a bare "regression", which also means a regression test, for "which commit broke it"
 
 ## 2026-09-07
 

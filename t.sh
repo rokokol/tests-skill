@@ -494,21 +494,6 @@ cmd_bisect_probe() {
   esac
 }
 
-# The switch that runs one test and skips the rest of the file, left in the source. No
-# runner reports it: jest and vitest print a skip count, which is what a suite legitimately
-# skipping a platform test prints too, and both exit 0. So a marker cannot reach it and the
-# log cannot show it — the source can, which is what this reads.
-#
-# It is one of a family. `.only`, `--pass-with-no-tests`, `-DskipTests`, `-x`: each was
-# added for an honest local reason, each turns a run into a lie when it outlives the commit
-# that needed it, and none of them is visible in a log. The ones that live in a config are
-# forbidden there — vitest's allowOnly, playwright's forbidOnly. The ones that live in the
-# source are found here.
-# A test taken out of the gate with no date on it is not quarantined, it is deleted with
-# extra steps. references/curation.md gives the file its shape — one row per test, with an
-# owner and an expiry — and this is the part a gate can hold: a row past its expiry is a
-# decision nobody made, and a date that is not a date is a row that can never expire, which
-# is the same silence an unknown config key gives.
 # A test that passes alone and fails in the suite was polluted by something that ran
 # before it. references/debugging.md gives the method — halve the order the way git bisect
 # halves commits — and this is that, mechanically. The candidates come in on stdin, one
@@ -607,6 +592,11 @@ cmd_pollute() { # pollute [-l DIR] [-m SET] [-p PATTERN] VICTIM -- CMD...
     "${#narrowed[@]}" "${#cands[@]}"
 }
 
+# A test taken out of the gate with no date on it is not quarantined, it is deleted with
+# extra steps. references/curation.md gives the file its shape — one row per test, with an
+# owner and an expiry — and this is the part a gate can hold: a row past its expiry is a
+# decision nobody made, and a date that is not a date is a row that can never expire, which
+# is the same silence an unknown config key gives.
 cmd_quarantine() { # quarantine [--on YYYY-MM-DD] [FILE]
   local on="" file=""
   while (($#)); do
@@ -700,6 +690,16 @@ focus_patterns() {
 FOCUS
 }
 
+# The switch that runs one test and skips the rest of the file, left in the source. No
+# runner reports it: jest and vitest print a skip count, which is what a suite legitimately
+# skipping a platform test prints too, and both exit 0. So a marker cannot reach it and the
+# log cannot show it — the source can, which is what this reads.
+#
+# It is one of a family. `.only`, `--pass-with-no-tests`, `-DskipTests`, `-x`: each was
+# added for an honest local reason, each turns a run into a lie when it outlives the commit
+# that needed it, and none of them is visible in a log. The ones that live in a config are
+# forbidden there — vitest's allowOnly, playwright's forbidOnly. The ones that live in the
+# source are found here.
 cmd_focused() { # focused [--any-file] [PATH...]
   local any_file=""
   local -a paths=()

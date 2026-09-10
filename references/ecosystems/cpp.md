@@ -10,13 +10,13 @@ t.sh run -m cpp -- ctest --test-dir build --output-on-failure
 ```
 
 - `--output-on-failure` — otherwise ctest prints a table of names and you never see why
-- **Building is its own gated step, not a preamble.** A run whose build quietly used yesterday's binaries answers about yesterday's code, and a build failure folded into the test command reads as a mysterious test failure. Two `t.sh run` invocations keep them apart. (`falsify` and `bisect` take `-b` instead, because there the harness has to tell the two apart without you watching.)
+- **Building is its own gated step, not a preamble.** A run whose build quietly used yesterday's binaries answers about yesterday's code, and a build failure folded into the test command reads as a mysterious test failure. Two `t.sh run` invocations keep them apart; `falsify` and `bisect` take `-b` instead, because there the harness has to tell the two apart without you watching
 - Warnings as errors on your own targets (`-Wall -Wextra -Werror`), not on vendored ones
 - Sanitizers in a dedicated CI job — `-fsanitize=address,undefined` — because they catch what a passing test cannot: use-after-free, overflow, unaligned access. `ASAN_OPTIONS=detect_leaks=1`, `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`
 
 ## Green that lies
 
-The sanitizer lines are in the default set already; the ctest and gtest ones ship as `markers/cpp.txt`, opted into with `-m cpp`:
+AddressSanitizer's and LeakSanitizer's lines and ctest's `No tests were found` are in the default set already; UBSan's, gtest's and the rest of ctest's ship as `markers/cpp.txt`, opted into with `-m cpp`:
 
 | Line | What happened |
 |---|---|
@@ -31,7 +31,7 @@ That last one deserves care: anything with a side effect inside `assert()` disap
 
 ## Fail on nothing ran, natively
 
-ctest has the switch and defaults it off: `ctest --no-tests=error` fails a run that found no tests, and without it the default on the command line is `ignore`, which prints `No tests were found!!!` and exits 0 — the marker in `markers/cpp.txt` is for the runs that never got the flag. It arrived in CMake 3.17, and since 3.26 `CTEST_NO_TESTS_ACTION=error` in the environment does the same for every invocation. The build half has no switch at all: `ninja: no work to do.` and `make: Nothing to be done for 'test'.` both exit 0, which is fine when the binaries are current and a lie when the build was pointed at yesterday's tree, so the test command should always follow the build command in the same job, and a run whose build printed nothing is worth a second look
+ctest has the switch and defaults it off: `ctest --no-tests=error` fails a run that found no tests, and without it the default on the command line is `ignore`, which prints `No tests were found!!!` and exits 0 — the default set's `no tests were found` is the marker for the runs that never got the flag. It arrived in CMake 3.17, and since 3.26 `CTEST_NO_TESTS_ACTION=error` in the environment does the same for every invocation. The build half has no switch at all: `ninja: no work to do.` and `make: Nothing to be done for 'test'.` both exit 0, which is fine when the binaries are current and a lie when the build was pointed at yesterday's tree, so the test command should always follow the build command in the same job, and a run whose build printed nothing is worth a second look
 
 ## Determinism
 

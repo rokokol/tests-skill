@@ -18,7 +18,7 @@ Where the rules come from, one line per source, grouped by the reference that us
 - [Software Engineering at Google, chapter 12, Unit Testing](https://abseil.io/resources/swe-book/html/ch12.html) — test behaviours not methods, no logic in tests, DAMP over DRY, unchanging tests, the Beyoncé rule
 - [Testing on the Toilet: Change-Detector Tests Considered Harmful](https://testing.googleblog.com/2015/01/testing-on-toilet-change-detector-tests.html) — the test that fails for edits that change no behaviour, the mirror image of a surviving defect
 - Michael Feathers, [Characterization Testing](https://michaelfeathers.silvrback.com/characterization-testing) — an assertion known to be wrong, so the failure reports what the code does
-- [Claude Code best practices](https://code.claude.com/docs/en/best-practices) — commit the failing test before the implementation, and the ladder from a prompt to a stop hook to a verifying subagent
+- [Claude Code best practices](https://code.claude.com/docs/en/best-practices) — the failing test written and watched failing before the implementation, and the ladder from a prompt to a stop hook to a verifying subagent. The page also commits the failing test on its own, which this skill does not: a red commit is one bisect cannot judge, so the test lands with its fix, see [commits.md](commits.md)
 
 ## Falsification
 

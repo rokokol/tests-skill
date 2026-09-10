@@ -35,4 +35,4 @@ Quarantine that lives only in a decorator is quarantine nobody reviews. A reposi
 |---|---|---|---|---|---|---|
 | `tests/test_sync.py::test_retry` | 2026-09-07 | timing | a sleep standing in for the socket close | @name | 2026-09-21 | remove `@pytest.mark.quarantine` |
 
-The categories are [flaky.md](flaky.md)'s; the expiry is a deadline, not a hope. A row past its expiry is a decision that was not made, and a gate can refuse it the way it refuses an unknown config key: loudly, naming the row. More than a few percent of the suite in this file is not a list of unstable tests; it is a suite whose infrastructure is unstable, and the fix is there
+The categories are [flaky.md](flaky.md)'s; the expiry is a deadline, not a hope. A row past its expiry is a decision that was not made, and `t.sh quarantine` refuses it the way `run` refuses an unknown config key: loudly, naming the row. More than a few percent of the suite in this file is not a list of unstable tests; it is a suite whose infrastructure is unstable, and the fix is there

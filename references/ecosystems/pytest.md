@@ -3,14 +3,14 @@
 ## Run it so it cannot lie quietly
 
 ```sh
-t.sh run -- pytest -q --strict-markers --strict-config -W error -p no:randomly
+t.sh run -- pytest -q --strict-markers --strict-config -W error
 ```
 
 - `--strict-markers` / `--strict-config` — a typo in a marker name or an unknown setting is an error rather than a silent no-op. Without them, `@pytest.mark.slwo` simply does nothing and the test runs where you thought it would not
 - `-W error` — turns warnings into failures. A `DeprecationWarning` from your own code is a scheduled outage; a suite that prints it forever is not reading it
 - `--maxfail` and `-x` are for iterating, never for the gate: the run stops early and the summary describes a fraction of the suite
 - `-p no:cacheprovider` in containers, so a stale `.pytest_cache` cannot change collection
-- Randomise order in CI (`pytest-randomly`, or `-p no:randomly` pinned with a seed you print) so order dependence fails on the day it is introduced
+- Randomise order in CI with `pytest-randomly`, which prints its seed at the top of every run, so order dependence fails on the day it is introduced; `--randomly-seed=N` replays one order, `--randomly-seed=last` the previous run's, and `-p no:randomly` turns it off for a run that needs the written order
 
 ## Green that lies
 
@@ -19,7 +19,7 @@ The unambiguous two are already in the default set; the noisier ones ship as `ma
 | Line | What happened |
 |---|---|
 | `collected 0 items` | a path, a filter or a rename meant nothing was found |
-| `no tests ran in 0.01s` | same, and the exit status may still be 0 with `--exitfirst` |
+| `no tests ran in 0.01s` | same; pytest itself exits 5 here, so a 0 beside this line means a wrapper softened the status |
 | `27 skipped` with no expectation | a `skipif` condition became true everywhere |
 | `xfailed` growing | tests marked expected-to-fail are a to-do list nobody reads |
 | `PytestUnraisableExceptionWarning` | an exception in a destructor or a thread went nowhere |

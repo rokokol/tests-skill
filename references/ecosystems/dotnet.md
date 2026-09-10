@@ -44,4 +44,4 @@ Which runner is underneath decides what "nothing ran" does. With VSTest, the run
 - `No test matches the given testcase filter` — a `--filter` that matched nothing. Not one test ran and the status says success
 - `No test is available in` — the assembly held no test the adapter could see: a missing adapter package, a framework mismatch, a project that is not a test project
 
-This is the ecosystem where the idea is clearest. Both are ordinary CI shapes, both exit 0, and a wrapper reading only the status calls each of them a pass. `dotnet test` has no native switch that turns either into a failure, which is why the marker set carries the weight here rather than a flag
+This is the ecosystem where the idea is clearest. Both are ordinary CI shapes, both exit 0 by default, and a wrapper reading only the status calls each of them a pass. The native switches above turn both into a failure where they are set — `TreatNoTestsAsError` under VSTest covers a run that discovers or selects zero tests, `--minimum-expected-tests` under Microsoft.Testing.Platform — and the marker set is for the runs that never got them

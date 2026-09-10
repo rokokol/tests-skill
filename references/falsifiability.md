@@ -13,9 +13,9 @@ A check that has never been red is a decoration: nobody knows whether it guards 
 - **A refusal must run where it can actually refuse.** In shell, `exit` inside a `$(...)`, a `( )` or a pipeline stage ends the subshell, and the caller carries on with an empty string. A guard written there does not guard: it prints to stderr and is ignored. Validate before the substitution, in the shell that can still stop
 - **A check that hangs when it fails is not a check.** A watchdog around anything that can loop, so the failure is a red line and not a job that a runner kills an hour later with no name attached
 
-## The four-command version
+## Without a harness
 
-The smallest falsification needs no harness. Write the test, run it green; take the fix out, run it, and it must go red; put the fix back, run it green. Four commands, and the middle one is the only evidence that the test is about the fix. `t.sh prove HEAD -- CMD` does exactly that for one commit: it splits the commit's files into tests and code by the same rule below, takes the code back to what it was before the commit, keeps the tests, and requires the suite to go red — `proven`, or `VACUOUS` when the tests pass without the fix, which means they pin nothing the commit did. It is the cost of a test and its code sharing a commit, and it is cheap
+The smallest falsification needs no harness. Write the test, run it green; take the fix out, run it, and it must go red; put the fix back, run it green. The middle run is the only evidence that the test is about the fix. `t.sh prove HEAD -- CMD` does exactly that for one commit: it splits the commit's files into tests and code by the same rule below, takes the code back to what it was before the commit, keeps the tests, and requires the suite to go red — `proven`, or `VACUOUS` when the tests pass without the fix, which means they pin nothing the commit did. It is the cost of a test and its code sharing a commit, and it is cheap
 
 ## Falsifying a suite: `t.sh falsify`
 

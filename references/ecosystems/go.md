@@ -22,7 +22,7 @@ t.sh run -- go test ./... -count=1 -race -shuffle=on
 | `DATA RACE` without `-race` failing | the detector reports but the build must be run with `-race` to fail |
 | `testing.Short()` branches | `-short` in CI quietly skips the expensive half |
 
-`[no test files]` and `[no tests to run]` are the reason those markers are **not** in `t.sh`'s default table: in any real module most packages have no tests, and a default that fires on them would be switched off on day one. They ship as an opt-in set instead — `t.sh run -m go -- go test ./... -count=1` — worth adopting once the repository expects tests everywhere; before that, grep for the count of `ok ` lines instead. `markers/go.txt` also carries `(cached)`, `[build failed]` and `[setup failed]`
+`[no test files]` and `[no tests to run]` are the reason those markers are **not** in `markers/default.txt`: in any real module most packages have no tests, and a default that fires on them would be switched off on day one. They ship as an opt-in set instead — `t.sh run -m go -- go test ./... -count=1` — worth adopting once the repository expects tests everywhere; before that, grep for the count of `ok ` lines instead. `markers/go.txt` also carries `(cached)`, `[build failed]` and `[setup failed]`
 
 ## Fail on nothing ran, natively
 

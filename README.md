@@ -116,7 +116,7 @@ The lint half runs the [ci](https://github.com/rokokol/ci-skill) skill's own gat
 
 The behaviour half is proven the same way: a command exiting 7 through a pipe must still be reported 7; a green run whose log says nothing was collected must not be a pass; a config with an unknown key must refuse rather than skip it; `bisect` must name the known culprit across a history containing a commit that will not build and say `INCONCLUSIVE` where nothing can answer; `falsify` must return each of its verdicts on a fixture built to produce exactly one of each, time out a defect that hangs, and put the source back byte for byte after an interrupt; `prove` must tell a test that pins its fix from one that does not. CI runs this half on a macOS runner under `/bin/bash` 3.2, with a `declare -A` and a `mapfile` planted in copies that must fail there, because a grep for bash-4 syntax was the guard once and let nine constructs through
 
-Then every check is proven able to fail: forty-six copies of the repository, one planted defect each, and each copy must fail for its own defect's reason. Every one of them was watched failing first — a dozen found real bugs in this repository while being written, three of them only under a real bash 3.2
+Then every check is proven able to fail: a copy of the repository per planted defect, and each copy must fail for its own defect's reason. Every one of them was watched failing first — a dozen found real bugs in this repository while being written, three of them only under a real bash 3.2
 
 ## Layout
 

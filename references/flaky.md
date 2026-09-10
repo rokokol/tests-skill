@@ -20,7 +20,7 @@ If twenty runs agree, the instability is elsewhere: in the CI machine's load, in
 |---|---|---|
 | **timing** | `sleep 0.5` then assert; passes until the machine is loaded | wait for the condition — the file, the port, the log line, the state — with a deadline that fails loudly |
 | **shared state** | the same temporary directory, database row, fixed port, environment variable, module-level cache; passes alone, fails in parallel | give each test its own, and let the framework allocate the port |
-| **order** | one test leaves state another happens to need; passes in one order, fails in another | randomise the order in CI so it fails on the day it is introduced; bisect the order to find the polluter |
+| **order** | one test leaves state another happens to need; passes in one order, fails in another | randomise the order in CI so it fails on the day it is introduced; `t.sh pollute` finds the polluter by halving the order |
 | **time and dates** | `now()`, timezones, midnight, the last week of a month, a timeout tuned to one machine | inject the clock; a fixed timezone in CI |
 | **unordered as ordered** | dictionary iteration, set serialisation, filesystem listing, concurrent log lines | sort before comparing, or compare as sets |
 | **external** | a name resolved, a URL fetched, a package mirror | not a test to fix but a test to move: it belongs outside the gate |
@@ -40,7 +40,7 @@ When a test is unstable and cannot be fixed today:
 
 1. **Take it out of the gate explicitly** — mark it, move it to a job that runs and does not block — so the gate goes back to meaning something. `skip` is not quarantine: a skipped test is dead code that still reads as coverage, while a quarantined one keeps running where its result is visible
 2. **Record the debt where it is visible**: a row in the repository's quarantine file naming the test, the date, the category above, what is suspected, who is on the hook and when it expires — see [curation.md](curation.md) for the file. A quarantine with no name and no date is a deletion that still costs CI minutes
-3. **Give it a deadline, and a short one.** Two weeks is the usual; a row past its expiry is a decision that was not made, and a gate can refuse it. A test quarantined for a year should be deleted, and the deletion noted — an honest gap is better than a comforting one
+3. **Give it a deadline, and a short one.** Two weeks is the usual; a row past its expiry is a decision that was not made, and `t.sh quarantine` refuses it. A test quarantined for a year should be deleted, and the deletion noted — an honest gap is better than a comforting one
 4. **Watch the size of the file.** More than a few percent of the suite in quarantine is not a list of unstable tests; it is a suite whose infrastructure is unstable, and the fix is there
 
 Deleting an unstable test is a legitimate outcome, provided it is deliberate and the test was not the only thing seeing a race in the code. What is not legitimate is leaving it in the gate while everyone silently reruns

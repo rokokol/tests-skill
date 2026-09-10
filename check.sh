@@ -188,8 +188,9 @@ check_lint() {
     fence { next }
     # an indented line is a code block, not prose
     /^    / || /^\t/ { next }
-    # a full stop the line ends on, and not an ellipsis
-    /[^.]\.$/ { print NR }
+    # a full stop the line ends on, and not an ellipsis — seen through the markup that can
+    # close after it, since `.**` and `.)` hold the door shut as firmly as a bare `.`
+    { s = $0; sub(/[*_)"]+$/, "", s); if (s ~ /[^.]\.$/) print NR }
   ' "$1"
   }
   for doc in "${docs[@]}"; do
@@ -1292,6 +1293,7 @@ check_proofs() {
   # pattern drifted from t.sh would otherwise leave a pristine copy, and the pristine copy
   # passes, which reads exactly like a defect that was caught.
   planted=0
+  skipped=0
   rows=0
   rows_dir="$work/rows"
   mkdir -p "$rows_dir"
@@ -1311,6 +1313,19 @@ check_proofs() {
     rows=$((rows + 1))
     local a
     for a in "$@"; do printf '%s\0' "$a"; done >"$(printf '%s/row-%04d' "$rows_dir" "$rows")"
+  }
+
+  # A row whose defect root cannot produce: root writes wherever it likes, so a copy that
+  # takes a write away proves nothing there. Counted rather than silently left out, so the
+  # floor below is held to exactly what ran plus exactly what was skipped
+  plant_unless_root() { # plant_unless_root PLANT-ARGS...
+    [[ "$mode" == all || "$mode" == "$1" ]] || return 0
+    if [[ $EUID -eq 0 ]]; then
+      echo "   skipped as root: $4"
+      skipped=$((skipped + 1))
+    else
+      plant "$@"
+    fi
   }
 
   plant_run() { # plant_run HALF NAME FRAGMENT DESCRIPTION MUTATOR FILE ARGS...
@@ -1446,6 +1461,12 @@ check_proofs() {
       append pitfalls.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
     plant lint fullstop "ends a line with a full stop" "a list item that ends with a full stop" \
       append references/verdict.md $'\n- a list item that ends with a full stop.\n'
+    # The full stop behind closing markup. The rule once read the last character only, and a
+    # bold sentence and a closing parenthesis each kept one in place with the gate green
+    plant lint fullstop-bold "ends a line with a full stop" "a bold paragraph with its full stop inside the markup" \
+      append references/verdict.md $'\n**A bold rule that ends with a full stop.**\n'
+    plant lint fullstop-paren "ends a line with a full stop" "a paragraph with its full stop inside a closing parenthesis" \
+      append references/verdict.md $'\nA remark. (A parenthesis that ends with a full stop.)\n'
     plant lint bloated "has grown to" "a SKILL.md that grew into a reference" \
       append SKILL.md "$(printf '\n- one more rule, and another\n%.0s' $(seq 1 40))"
     plant lint orphan "reaches it" "a reference nothing links to" \
@@ -1539,10 +1560,6 @@ check_proofs() {
     # stripping INT alone leaves EXIT to put the file back and the copy passes.
     plant behaviour unrestored "did not put impl.sh back" "a falsify that does not restore the source it was interrupted over" \
       sed t.sh "/^  trap /s/restore_all; //" "trap 'cleanup_worktree' EXIT"
-    # The grep is the whole of `expect caught`: without it every red run is a catch, which
-    # is the claim the clause exists to stop being made
-    # A scan that reports nothing reads exactly like a clean tree, which is the shape of
-    # guard this harness exists to refuse — so the emptied pattern list has to be fatal
     # Both premises, because a search that skips them answers the wrong question with
     # confidence: a victim already broken would have its first candidate named as the cause
     plant behaviour unbisected "over a history where every commit passes" "a bisect that takes HEAD being bad on trust" \
@@ -1555,10 +1572,14 @@ check_proofs() {
       sed t.sh 's/^      if (cell\[ecol\] < today) {$/      if (0) {/' 'if (0) {'
     plant behaviour undated-ok "can never come up for review" "a quarantine that accepts an expiry which is not a date" \
       sed t.sh 's/^      if (cell\[ecol\] !~ \/\^\[0-9\]\[0-9\]\[0-9\]\[0-9\]-\[0-9\]\[0-9\]-\[0-9\]\[0-9\]\$\/) {$/      if (0) { # planted/' '# planted'
+    # A scan that reports nothing reads exactly like a clean tree, which is the shape of
+    # guard this harness exists to refuse — so the emptied pattern list has to be fatal
     plant behaviour blindscan "exited 70 on a tree" "a focus scan with no pattern to scan for" \
       sed t.sh "s/^  cat <<'FOCUS'\$/  : <<'FOCUS'/" ": <<'FOCUS'"
     plant behaviour unfocused "exited 0 on a tree" "a focused that finds them and says nothing went wrong" \
       sed t.sh 's/^  return 80$/  return 0/' 'return 0'
+    # The grep is the whole of `expect caught`: without it every red run is a catch, which
+    # is the claim the clause exists to stop being made
     plant behaviour miscredited "was still called caught" "a falsify that credits a red run to a guard that did not catch" \
       sed t.sh 's@^      grep -qF -- "$expect" .*VERDICT=misattributed$@      : # planted@' '# planted'
     plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
@@ -1601,14 +1622,10 @@ check_proofs() {
     # unreferenced, and the copy would then fail on shellcheck instead of on the check
     plant behaviour nosidecar "did not record" "a run that keeps its verdict to itself" \
       sed t.sh 's|>"\$log\.verdict"|>/dev/null|' 'printf '"'"'%s\n'"'"' "$RUN_VERDICT" >/dev/null'
-    if [[ $EUID -eq 0 ]]; then
-      echo "   skipped: the unwritable-log and unwritten-mutant checks themselves are skipped as root"
-    else
-      plant behaviour nolog "nowhere to put its log" "a run that cannot write its log" \
-        drop t.sh ': >"$log" || fatal'
-      plant behaviour unwritten "could not write" "a falsify that does not check its write" \
-        sed t.sh 's/ || fatal "falsify: cannot write \$file.*$/ # planted/' '# planted'
-    fi
+    plant_unless_root behaviour nolog "nowhere to put its log" "a run that cannot write its log" \
+      drop t.sh ': >"$log" || fatal'
+    plant_unless_root behaviour unwritten "could not write" "a falsify that does not check its write" \
+      sed t.sh 's/ || fatal "falsify: cannot write \$file.*$/ # planted/' '# planted'
   }
 
   # t.sh travels to repositories that run CI on macOS, which ships bash 3.2, and that is
@@ -1639,14 +1656,15 @@ check_proofs() {
   # the gate stayed green. The count is per half, so a half cannot borrow the other's rows.
   # A floor and not an equality, because the bash-3.2 block adds two rows where it runs;
   # but a floor left behind by rows added since is slack, and slack is how a lost row goes
-  # unnoticed. These are the counts with that block skipped.
+  # unnoticed. These are the counts with that block skipped, and the rows root cannot prove
+  # count as rows here, since each was named and skipped rather than lost.
   case "$mode" in
-    lint) want_planted=21 ;;
+    lint) want_planted=23 ;;
     behaviour) want_planted=40 ;;
-    all) want_planted=61 ;;
+    all) want_planted=63 ;;
   esac
-  ((planted >= want_planted)) ||
-    fail "only $planted defects were planted for mode '$mode', not $want_planted — the falsification table has lost rows"
+  ((planted + skipped >= want_planted)) ||
+    fail "only $planted defects were planted and $skipped skipped for mode '$mode', not $want_planted — the falsification table has lost rows"
 }
 
 case "$mode" in

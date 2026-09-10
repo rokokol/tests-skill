@@ -4,7 +4,7 @@
 
 ## The rule
 
-**One logical change per commit, and every commit builds and passes on its own.**
+**One logical change per commit, and every commit builds and passes on its own**
 
 A logical change is one answer to one question: this rename, this bug fix, this new behaviour. Not "the morning's work". Not "fix tests" three commits after the change that broke them — that commit is an admission that the earlier one did not stand on its own
 

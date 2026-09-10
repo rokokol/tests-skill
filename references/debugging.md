@@ -22,7 +22,7 @@ After three fixes that did not fix it, the hypothesis is not the problem: the mo
 
 ## When the failure is in the tests
 
-- **Bisect the order, not only the history.** A test that passes alone and fails in the suite is polluted by a test that ran before it: run the suite in halves until the polluter is found, the way `git bisect` halves commits. Shuffled order in CI, `pytest-randomly`, `go test -shuffle=on`, `vitest --sequence.shuffle`, makes the pollution fail on the day it is introduced rather than on the day someone adds a test
+- **Bisect the order, not only the history.** A test that passes alone and fails in the suite is polluted by a test that ran before it: run the suite in halves until the polluter is found, the way `git bisect` halves commits — `t.sh pollute VICTIM -- CMD` does the halving. Shuffled order in CI, `pytest-randomly`, `go test -shuffle=on`, `vitest --sequence.shuffle`, makes the pollution fail on the day it is introduced rather than on the day someone adds a test
 - **Bisect one targeted test, never the whole suite.** `t.sh bisect GOOD -- pytest tests/test_sync.py::test_retry`: an unrelated failure in another file at an older commit is read as "bad" and sends the search off course. See [commits.md](commits.md)
 - **A test that disagrees with itself is not a bug to debug; it is instability to prove first.** `t.sh flaky 20` before any hypothesis, and [flaky.md](flaky.md) for what to do with the answer
 

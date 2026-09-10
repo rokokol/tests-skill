@@ -25,7 +25,7 @@ Two invocations, not one: a build failure is a build failure, and folding it int
 | `#[ignore]` accumulating | a to-do list that never turns red |
 | a panic in a spawned thread | the thread dies, the test may still pass |
 
-`running 0 tests` is printed for every target without tests — doc-test targets and empty integration targets included — so it is not in `t.sh`'s default set. It ships as an opt-in one instead — `t.sh run -m rust -- cargo test --workspace` — worth adopting in a crate where every target really is expected to have tests. `markers/rust.txt` also carries `thread 'main' panicked` and the failed summary line. A filter that matched nothing prints the same two empty-run lines with `N filtered out` beside them; `0 filtered out` itself is what every healthy full run prints, and a marker on it once reddened every good run
+`running 0 tests` is printed for every target without tests — doc-test targets and empty integration targets included — so it is not in `markers/default.txt`. It ships as an opt-in one instead — `t.sh run -m rust -- cargo test --workspace` — worth adopting in a crate where every target really is expected to have tests. `markers/rust.txt` also carries the lines of a failed run — a panic, the failed summary, cargo's own `error: test failed` — for a status that a pipe or a wrapper swallowed. A filter that matched nothing prints the same two empty-run lines with `N filtered out` beside them; `0 filtered out` itself is what every healthy full run prints, and a marker on it once reddened every good run
 
 ## Fail on nothing ran, natively
 
