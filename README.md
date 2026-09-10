@@ -70,6 +70,9 @@ The core is not negotiable because every rule in it is true in any language. Eve
 |---|---|
 | `t.sh run -- CMD` | did it pass — status kept honest, whole log kept, log read even at exit 0 |
 | `t.sh flaky N -- CMD` | do repeated runs of the same code disagree with each other |
+| `t.sh focused [PATH...]` | is a `.only` left in the source, so the runner skips most of the suite and exits 0 |
+| `t.sh quarantine [FILE]` | is a test out of the gate past the date somebody promised to look at it |
+| `t.sh pollute VICTIM -- CMD` | which earlier test makes this one fail, by halving the order |
 | `t.sh bisect GOOD -- CMD` | which commit broke it, skipping the ones that cannot answer |
 | `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
 | `t.sh prove [REF] -- CMD` | does the commit's own test go red when its fix is taken away |
@@ -119,7 +122,7 @@ Then every check is proven able to fail: forty-six copies of the repository, one
 
 ```
 SKILL.md              the rules an agent reads, and the checklist before "it works"
-t.sh                  the harness: run / flaky / bisect / falsify / prove, and its help
+t.sh                  the harness; `t.sh help` lists every subcommand
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, ecosystems/ per language, sources.md for the evidence
 templates/            defects.sh for falsify, t.conf for a repository's own policy

@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # t.sh — the local test harness: one subcommand per question a test run raises.
 #
-#   run      did it pass — the command's own status, the whole log kept and read even at 0
-#   flaky    do repeated runs of the same code disagree
-#   bisect   which commit broke it, skipping the ones that cannot answer
-#   falsify  which guards the suite would not notice being broken
-#   prove    does a commit's own test go red when its fix is taken away
-#
-# `t.sh help [SUBCOMMAND]` is the reference: every flag, the T_ variables, the exit codes.
+# `t.sh help [SUBCOMMAND]` is the reference: every subcommand, every flag, the T_ variables,
+# the exit codes. It is the only list on purpose — this header used to carry a second one,
+# and it fell three subcommands behind the dispatch before anyone noticed.
 # The command is always explicit, after `--`; nothing here guesses what your suite is.
 # A repository keeps its policy — marker sets, excused lines, log directory — in
 # ./tests/t.conf, read from the current directory only, and never the command.

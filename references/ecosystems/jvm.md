@@ -14,7 +14,7 @@ t.sh run -- ./mvnw -q test -DfailIfNoTests=true
 
 ## Fail on nothing ran, natively
 
-Every runner here has the switch, and two of three default it the wrong way. The JUnit Platform console launcher has `--fail-if-no-tests`, exit 2. Maven's surefire has `failIfNoTests`, default `false`, so a module whose tests were all renamed away prints `No tests to run.` and builds green; `failIfNoSpecifiedTests` is `true` by default, but only guards an explicit `-Dtest=` filter. Gradle 9 turned `failOnNoDiscoveredTests` on by default — a test task with sources present, no filters and no tests discovered now fails — and the rule for Gradle is not to turn it back off. Below 9, or with surefire's default, the run needs a marker: there is no `markers/jvm.txt` yet, and the recipe for one is at the end
+Every runner here has the switch, and two of three default it the wrong way. The JUnit Platform console launcher has `--fail-if-no-tests`, exit 2. Maven's surefire has `failIfNoTests`, default `false`, so a module whose tests were all renamed away prints `No tests to run.` and builds green; `failIfNoSpecifiedTests` is `true` by default, but only guards an explicit `-Dtest=` filter. Gradle 9 turned `failOnNoDiscoveredTests` on by default — a test task with sources present, no filters and no tests discovered now fails — and the rule for Gradle is not to turn it back off. Below 9, or with surefire's default, the run needs a marker, and `markers/jvm.txt` carries one — see the end
 
 ## Green that lies
 

@@ -13,7 +13,7 @@ t.sh run -- vendor/bin/phpunit --fail-on-empty-test-suite --fail-on-risky --fail
 
 ## Fail on nothing ran, natively
 
-`--fail-on-empty-test-suite` makes a run that found no tests fail; without it PHPUnit prints `No tests executed!` and exits 0, which is exactly the run that a moved directory or a misspelt `testsuite` in `phpunit.xml` produces. It belongs in `phpunit.xml` under `<phpunit failOnEmptyTestSuite="true">` rather than on every command line, so the policy is in the repository. With the flag in place the marker is a second line; there is no `markers/php.txt` yet, and the recipe for one is at the end
+`--fail-on-empty-test-suite` makes a run that found no tests fail; without it PHPUnit prints `No tests executed!` and exits 0, which is exactly the run that a moved directory or a misspelt `testsuite` in `phpunit.xml` produces. It belongs in `phpunit.xml` under `<phpunit failOnEmptyTestSuite="true">` rather than on every command line, so the policy is in the repository. With the flag in place the marker is a second line, and `markers/php.txt` carries it — see the end
 
 ## Green that lies
 

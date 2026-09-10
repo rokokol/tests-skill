@@ -60,7 +60,7 @@ The command is always explicit, after `--`: a harness that guesses what your sui
 
 ```
 SKILL.md              this file — the core, the modes, the harness, the checklist
-t.sh                  run / flaky / focused / quarantine / pollute / bisect / falsify / prove
+t.sh                  the harness — the table above, and `t.sh help` for every flag
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, ecosystems/ for the per-language specifics, sources.md for the evidence
 templates/            defects.sh for falsify, t.conf for a repository's own policy
