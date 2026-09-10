@@ -56,6 +56,10 @@ These are choices, and [references/layers.md](references/layers.md) gives the cr
 
 The command is always explicit, after `--`: a harness that guesses what your suite is runs the wrong thing on the day it matters. A repository's *policy* — which marker sets apply, which lines are excused — can live in `tests/t.conf`, which never carries the command for the same reason. Its own verdicts sit in an exit-code band no test runner uses, 64 to 89, so a suite's own 2 or 4 is never mistaken for one. `t.sh help` carries the flags, the variables and the codes
 
+## Taking the harness into another repository
+
+`t.sh` and `markers/` are what this skill hands to other repositories, and `t.sh` reads its markers from the directory beside it, so the two travel together. They come by the ci skill's vendoring cascade rather than by hand: `vendor-sync.sh add scripts/t.sh rokokol/tests-skill t.sh` and `vendor-sync.sh add scripts/markers/ rokokol/tests-skill markers/` write the copies and their lock lines, and the weekly cascade brings every later fix. A copy is never edited in place — a change goes here, where every copy will get it. What stays the repository's own is written there, not taken: `tests/t.conf` for its policy and `tests/defects.sh` for falsify, starting from `templates/`. The mechanism itself is described once, in the ci skill's [vendored files](https://github.com/rokokol/ci-skill/blob/master/references/bump-cascade.md#vendored-files)
+
 ## Layout
 
 ```

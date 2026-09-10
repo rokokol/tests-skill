@@ -4,6 +4,10 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ## 2026-09-10
 
+### Changed
+
+- `SKILL.md` says how another repository takes `t.sh` and `markers/`: together, since `t.sh` reads its markers from the directory beside it, and through the ci skill's vendoring cascade rather than by hand, with a fix going here rather than into a copy. `t.sh`'s header says the same, so every copy carries it. `tests/t.conf` and `tests/defects.sh` stay the repository's own
+
 ### Fixed
 
 - `t.sh focused`, `quarantine` and `pollute` were missing from the README's harness table, from its layout line and from `t.sh`'s own header — three copies of a list that lives in the dispatch, each a few subcommands behind. The header now names `t.sh help` as the only list, and both layout lines point at it rather than restating it

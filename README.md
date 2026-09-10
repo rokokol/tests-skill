@@ -112,7 +112,7 @@ nix develop -c ./check.sh lint         # what the skill ships: scripts, workflow
 /bin/bash ./check.sh behaviour         # what the harness does, under any bash from 3.2 up
 ```
 
-The lint half runs the [ci](https://github.com/rokokol/ci-skill) skill's own gates for a skill repository, `check-skill.sh` and `check-pins.sh`, copied verbatim, lints every script, holds every document to one paragraph per line, and reads the marker files exactly as `run` reads them: every entry must catch a line in its set's lying fixture and stay quiet on a real healthy run of its tool, kept under `tests/fixtures/clean/`, so a dead marker cannot sit there looking like a guard and a noisy one cannot redden good runs
+The lint half runs the [ci](https://github.com/rokokol/ci-skill) skill's own gates for a skill repository, `check-skill.sh` and `check-pins.sh`, vendored, lints every script, holds every document to one paragraph per line, and reads the marker files exactly as `run` reads them: every entry must catch a line in its set's lying fixture and stay quiet on a real healthy run of its tool, kept under `tests/fixtures/clean/`, so a dead marker cannot sit there looking like a guard and a noisy one cannot redden good runs
 
 The behaviour half is proven the same way: a command exiting 7 through a pipe must still be reported 7; a green run whose log says nothing was collected must not be a pass; a config with an unknown key must refuse rather than skip it; `bisect` must name the known culprit across a history containing a commit that will not build and say `INCONCLUSIVE` where nothing can answer; `falsify` must return each of its verdicts on a fixture built to produce exactly one of each, time out a defect that hangs, and put the source back byte for byte after an interrupt; `prove` must tell a test that pins its fix from one that does not. CI runs this half on a macOS runner under `/bin/bash` 3.2, with a `declare -A` and a `mapfile` planted in copies that must fail there, because a grep for bash-4 syntax was the guard once and let nine constructs through
 
@@ -127,8 +127,8 @@ markers/              what a lying log says, as data: default.txt always, the re
 references/           one spec per rule, ecosystems/ per language, sources.md for the evidence
 templates/            defects.sh for falsify, t.conf for a repository's own policy
 check.sh              the self-testing gate, in a lint half and a behaviour half
-check-skill.sh        the ci skill's gate for a skill repository, verbatim
-check-pins.sh         the ci skill's pin guard for the workflows, verbatim
+check-skill.sh        the ci skill's gate for a skill repository, vendored
+check-pins.sh         the ci skill's pin guard for the workflows, vendored
 tests/fixtures/       lying/ the runs the markers must catch, clean/ the healthy ones they must not
 ```
 

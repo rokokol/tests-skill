@@ -7,6 +7,9 @@
 # The command is always explicit, after `--`; nothing here guesses what your suite is.
 # A repository keeps its policy — marker sets, excused lines, log directory — in
 # ./tests/t.conf, read from the current directory only, and never the command.
+# Another repository takes this file and markers/ beside it through the ci skill's
+# vendoring cascade (references/bump-cascade.md in https://github.com/rokokol/ci-skill)
+# and never edits its copies in place: a fix belongs in rokokol/tests-skill.
 set -uo pipefail
 
 # 64 is EX_USAGE and 70 is EX_SOFTWARE in sysexits(3): the caller asked wrongly, or the
