@@ -6,7 +6,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Changed
 
-- `t.sh run` and `t.sh flaky` answer a value flag given without its value — `-l`, `-m`, `-p`, `-t` — with the usage code 64 and their own message; `${2:?}` answered it with 1 and bash's text, and 1 is what a failing command exits, so a mistyped call read as a red test run
+- every `t.sh` subcommand answers a value flag given without its value — `-l`, `-m`, `-p`, `-t`, `-b`, `-d`, `--on`, `--since`, `--shard`, `--out`, `--timeout` — with the usage code 64 and its own message; `${2:?}` answered it with 1 and bash's text, and 1 is what a failing command exits, so a mistyped call read as a red test run
 - the gate holds every `t.sh …` mention in `references/` to the dispatcher as well, through `check-sh.sh -m`, so a renamed or removed subcommand cannot survive in a reference page; thirteen of them spell one
 - the stub shebang rule in `references/ecosystems/shell.md` is narrowed to what it protects against: a stub the test writes while it runs is `#!/bin/sh`, because a build sandbox has `/bin/sh` and no `/usr/bin/env` and nothing rewrites a file created mid-build, while a stub committed to the repository may keep `#!/usr/bin/env bash` when the build runs `patchShebangs` over the checkout first
 - the root maintainer record follows the dedicated-document convention as `PITFALLS.md` and is linked from a header badge; its role stays the same, separate from the test standard in `SKILL.md` and `references/`

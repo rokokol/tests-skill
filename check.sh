@@ -444,14 +444,21 @@ check_behaviour() {
   tsh run -t abc -l "$work/logs" -- sh -c 'exit 1' >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "run accepted -t abc (got $status); (( )) reads a word as zero, so the tail silently vanished"
   # A value flag given last, with its value missing. ${2:?} answered that with 1 and
-  # bash's own text, and 1 is what a failing CMD exits — a usage error read as a red run
-  for flag in -l -m -p -t; do
+  # bash's own text, and 1 is what a failing CMD exits — a usage error read as a red run.
+  # Every parser's value flags, each spelled where its subcommand takes flags
+  for call in "run -l" "run -m" "run -p" "run -t" \
+    "flaky 2 -l" "flaky 2 -m" "flaky 2 -p" "flaky 2 -t" \
+    "bisect-probe -b" "bisect-probe -l" "bisect-probe -m" "bisect-probe -p" "bisect-probe -t" \
+    "pollute -l" "pollute -m" "pollute -p" "pollute -t" \
+    "quarantine --on" \
+    "bisect HEAD -b" "bisect HEAD -m" "bisect HEAD -p" "bisect HEAD -t" \
+    "falsify -d" "falsify --since" "falsify --shard" "falsify --out" "falsify --timeout" \
+    "falsify -b" "falsify -l" "falsify -m" "falsify -p" "falsify -t" \
+    "prove -b" "prove --timeout" "prove -l" "prove -m" "prove -p" "prove -t"; do
     status=0
-    tsh run "$flag" >/dev/null 2>&1 || status=$?
-    ((status == 64)) || fail "run $flag with no value exited $status, not the usage code 64 — 1 is indistinguishable from CMD failing"
-    status=0
-    tsh flaky 2 "$flag" >/dev/null 2>&1 || status=$?
-    ((status == 64)) || fail "flaky 2 $flag with no value exited $status, not the usage code 64"
+    # shellcheck disable=SC2086 # the call is split into its words on purpose
+    tsh $call >/dev/null 2>&1 || status=$?
+    ((status == 64)) || fail "t.sh $call with no value exited $status, not the usage code 64 — 1 is indistinguishable from CMD failing"
   done
   findings=$(tsh run -t 0 -m rust -m rust -l "$work/logs" -- sh -c 'echo "running 0 tests"; exit 0' 2>&1 |
     grep -c '^  \[running 0 tests\]' || :)
