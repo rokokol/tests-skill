@@ -1214,7 +1214,7 @@ DEFECTS
   # reference added later is covered by the glob rather than by a list kept here
   ref_docs=()
   for f in references/*.md references/ecosystems/*.md; do ref_docs+=(-m "$f"); done
-  "$BASH" ./check-sh.sh -n t.sh -e T_ -d SKILL.md -d README.md "${ref_docs[@]}" t.sh
+  "$BASH" ./check-sh.sh -n t.sh -e T_ -m SKILL.md -d README.md "${ref_docs[@]}" t.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do

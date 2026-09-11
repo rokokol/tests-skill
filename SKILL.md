@@ -41,21 +41,9 @@ These are choices, and [references/layers.md](references/layers.md) gives the cr
 
 ## The harness
 
-[`t.sh`](t.sh) is the mechanical half of the core, so following it costs less than not:
+[`t.sh`](t.sh) is the mechanical half of the core, so following it costs less than not: one subcommand per question a test run raises. `t.sh help` is the reference — every subcommand with the question it answers, its flags, the variables and the exit codes — so run `t.sh help [SUB]` before an unfamiliar command rather than guessing one from this page
 
-| Command | What it answers |
-|---|---|
-| `t.sh run -- CMD` | did it pass — status kept honest, whole log kept, log read even at 0 |
-| `t.sh flaky N -- CMD` | do repeated runs of the same code disagree |
-| `t.sh focused [PATH...]` | is a `.only` left in the source, so the runner skips most of the suite and exits 0 |
-| `t.sh quarantine [FILE]` | is a test out of the gate past the date somebody promised to look at it |
-| `t.sh pollute VICTIM -- CMD` | which earlier test makes this one fail, by halving the order |
-| `t.sh bisect GOOD -- CMD` | which commit broke it, skipping the ones that cannot answer |
-| `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
-| `t.sh prove [REF] -- CMD` | does the commit's own test go red when its fix is taken away |
-| `t.sh bisect-probe [FLAGS] -- CMD` | internal: the single-commit verdict `git bisect run` calls at each step, not for hand use |
-
-The command is always explicit, after `--`: a harness that guesses what your suite is runs the wrong thing on the day it matters. A repository's *policy* — which marker sets apply, which lines are excused — can live in `tests/t.conf`, which never carries the command for the same reason. Its own verdicts sit in an exit-code band no test runner uses, 64 to 89, so a suite's own 2 or 4 is never mistaken for one. `t.sh help` carries the flags, the variables and the codes
+The command is always explicit, after `--`: a harness that guesses what your suite is runs the wrong thing on the day it matters. A repository's *policy* — which marker sets apply, which lines are excused — can live in `tests/t.conf`, which never carries the command for the same reason. Its own verdicts sit in an exit-code band no test runner uses, 64 to 89, so a suite's own 2 or 4 is never mistaken for one
 
 ## Taking the harness into another repository
 

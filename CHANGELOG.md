@@ -6,6 +6,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Changed
 
+- `SKILL.md` no longer restates `t.sh`'s subcommands in a table: `t.sh help` prints the same list with the same one-line answers, so the table was a copy loaded with every use of the skill. It sends the agent to `t.sh help [SUB]`, and the gate holds its mentions with `check-sh.sh -m`; the readme keeps the table for readers who cannot run the tool
 - every `t.sh` subcommand answers a value flag given without its value — `-l`, `-m`, `-p`, `-t`, `-b`, `-d`, `--on`, `--since`, `--shard`, `--out`, `--timeout` — with the usage code 64 and its own message; `${2:?}` answered it with 1 and bash's text, and 1 is what a failing command exits, so a mistyped call read as a red test run
 - the gate holds every `t.sh …` mention in `references/` to the dispatcher as well, through `check-sh.sh -m`, so a renamed or removed subcommand cannot survive in a reference page; thirteen of them spell one
 - the stub shebang rule in `references/ecosystems/shell.md` is narrowed to what it protects against: a stub the test writes while it runs is `#!/bin/sh`, because a build sandbox has `/bin/sh` and no `/usr/bin/env` and nothing rewrites a file created mid-build, while a stub committed to the repository may keep `#!/usr/bin/env bash` when the build runs `patchShebangs` over the checkout first
