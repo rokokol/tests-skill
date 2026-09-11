@@ -53,7 +53,7 @@ The command is always explicit, after `--`: a harness that guesses what your sui
 
 ```
 SKILL.md              this file — the core, the modes, the harness, the checklist
-t.sh                  the harness — the table above, and `t.sh help` for every flag
+t.sh                  the harness — `t.sh help` for every subcommand, flag, variable and code
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, ecosystems/ for the per-language specifics, sources.md for the evidence
 templates/            defects.sh for falsify, t.conf for a repository's own policy
