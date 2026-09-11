@@ -33,7 +33,7 @@ bats has it the right way round: a suite with no tests exits 1 unless `--allow-e
 
 - One `mktemp -d` with a template plus a `trap … EXIT` for cleanup, never a fixed path under `/tmp` — the spelling is the bash-best-practices skill's, in `references/shape.md`
 - Stub external tools by putting a directory first on `PATH` — and then **assert that the stub is what resolves** (`command -v tool` equals your stub, and the stub is executable). A stub the script never reaches hands the suite the real tool, and for something like a compositor client or a package manager that means the suite is driving the real system while reporting success
-- Stubs written as `#!/bin/sh`, not `#!/usr/bin/env bash`: a sandbox may have no `/usr/bin`
+- A stub the test writes while it runs is `#!/bin/sh`, not `#!/usr/bin/env bash`: a build sandbox such as Nix's has `/bin/sh` and no `/usr/bin/env`, and nothing rewrites a file created after the build started. A stub committed to the repository may keep `#!/usr/bin/env bash` when the build runs `patchShebangs` over the checkout before the suite, as the huix family's flakes do (`claude-account/flake.nix:83`) — that rewrites it to the store's bash
 - Anything interactive gets a `timeout`, or a prompt style nobody predicted becomes a hanging job rather than a red one
 
 ## For `tests/defects.sh`
