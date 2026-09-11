@@ -443,6 +443,16 @@ check_behaviour() {
   status=0
   tsh run -t abc -l "$work/logs" -- sh -c 'exit 1' >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "run accepted -t abc (got $status); (( )) reads a word as zero, so the tail silently vanished"
+  # A value flag given last, with its value missing. ${2:?} answered that with 1 and
+  # bash's own text, and 1 is what a failing CMD exits — a usage error read as a red run
+  for flag in -l -m -p -t; do
+    status=0
+    tsh run "$flag" >/dev/null 2>&1 || status=$?
+    ((status == 64)) || fail "run $flag with no value exited $status, not the usage code 64 — 1 is indistinguishable from CMD failing"
+    status=0
+    tsh flaky 2 "$flag" >/dev/null 2>&1 || status=$?
+    ((status == 64)) || fail "flaky 2 $flag with no value exited $status, not the usage code 64"
+  done
   findings=$(tsh run -t 0 -m rust -m rust -l "$work/logs" -- sh -c 'echo "running 0 tests"; exit 0' 2>&1 |
     grep -c '^  \[running 0 tests\]' || :)
   ((findings == 1)) || fail "a marker set named twice printed its finding $findings times, not once"

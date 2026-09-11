@@ -222,21 +222,27 @@ cmd_run() {
   while (($#)); do
     case "$1" in
       -l)
-        logdir="${2:?-l needs a directory}"
+        # Not ${2:?}: that exits 1 with bash's own message, and 1 is what a failing CMD
+        # exits — a usage error has to be 64 to be told apart
+        (($# >= 2)) || die "run: -l needs a directory"
+        logdir="$2"
         shift 2
         ;;
       -m)
         # Additive: the default set always applies, and a repository opts into more
-        resolve_markers "${2:?-m needs a marker set or file}"
+        (($# >= 2)) || die "run: -m needs a marker set or file"
+        resolve_markers "$2"
         add_marker_file "$RESOLVED"
         shift 2
         ;;
       -p)
-        extra+=("${2:?-p needs a pattern}")
+        (($# >= 2)) || die "run: -p needs a pattern"
+        extra+=("$2")
         shift 2
         ;;
       -t)
-        tail_n="${2:?-t needs a number}"
+        (($# >= 2)) || die "run: -t needs a number"
+        tail_n="$2"
         # (( )) reads a word as the variable of that name, which is zero, so `-t abc`
         # would silently mean "no tail" rather than refuse
         [[ "$tail_n" =~ ^[0-9]+$ ]] || die "run: -t needs a number of lines, got '$tail_n'"
@@ -346,20 +352,23 @@ cmd_flaky() {
   while (($#)); do
     case "$1" in
       -l)
-        logdir="${2:?-l needs a directory}"
+        (($# >= 2)) || die "flaky: -l needs a directory"
+        logdir="$2"
         shift 2
         ;;
       -m)
         # Resolved here as well as in run, so a set that does not exist is refused
         # before the first of twenty runs rather than inside it
-        resolve_markers "${2:?-m needs a marker set or file}"
+        (($# >= 2)) || die "flaky: -m needs a marker set or file"
+        resolve_markers "$2"
         pass+=("$1" "$2")
         shift 2
         ;;
       -p | -t)
         # Forwarded to run, which validates them. Named here rather than swept up by a
         # catch-all, so the gate can read from this parser which flags flaky accepts.
-        pass+=("$1" "${2:?$1 needs a value}")
+        (($# >= 2)) || die "flaky: $1 needs a value"
+        pass+=("$1" "$2")
         shift 2
         ;;
       --) break ;;
