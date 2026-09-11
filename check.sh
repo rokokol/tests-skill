@@ -1460,7 +1460,7 @@ check_proofs() {
     # A document at the root that no list in the gate names: the rule has to find it, and
     # with the old hand-kept list this copy passed
     plant lint wrapped-unlisted "hard-wraps a paragraph" "a hard-wrapped paragraph in a document no list names" \
-      append pitfalls.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
+      append PITFALLS.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
     plant lint fullstop "ends a line with a full stop" "a list item that ends with a full stop" \
       append references/verdict.md $'\n- a list item that ends with a full stop.\n'
     # The full stop behind closing markup. The rule once read the last character only, and a
