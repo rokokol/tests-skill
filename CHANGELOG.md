@@ -7,6 +7,9 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Changed
 
 - the root maintainer record follows the dedicated-document convention as `PITFALLS.md` and is linked from a header badge; its role stays the same, separate from the test standard in `SKILL.md` and `references/`
+- the bash rules that lived here as testing rules — the `set -euo pipefail` flags and where `-e` does not fire, `PIPESTATUS` and zsh's `$pipestatus`, the shebang, a `for` loop's status, `yes | cmd` under `pipefail`, `mktemp -d` with a `trap`, the bash 3.2 and BSD sources, and the four general traps in `PITFALLS.md` — are the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's now, stated there once with their evidence; `references/ecosystems/shell.md`, `references/sources.md` and `PITFALLS.md` keep what is about this repository and point there for the rest
+- the gate holds `t.sh help` to the dispatcher, the parsers, the `T_` variables and the literal exit codes with that skill's `check-sh.sh`, vendored, which also holds every `t.sh …` mention in `SKILL.md` and `README.md` to the dispatcher both ways — it found `bisect-probe` named in neither, and both now list it as the internal subcommand `git bisect run` calls. What stays the gate's own is the 64–89 band, returned from functions rather than exited, and the refusal of an unknown help topic
+- the macOS job moves out of `build.yml` into `macos.yml`, the workflow that skill hands out verbatim, so the bash 3.2 claim has its own badge; the variable that turns the planted-construct block on is `CHECK_BASH32`, as in every repository that takes the workflow
 
 ## 2026-09-10
 

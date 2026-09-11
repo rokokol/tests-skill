@@ -53,6 +53,7 @@ These are choices, and [references/layers.md](references/layers.md) gives the cr
 | `t.sh bisect GOOD -- CMD` | which commit broke it, skipping the ones that cannot answer |
 | `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
 | `t.sh prove [REF] -- CMD` | does the commit's own test go red when its fix is taken away |
+| `t.sh bisect-probe [FLAGS] -- CMD` | internal: the single-commit verdict `git bisect run` calls at each step, not for hand use |
 
 The command is always explicit, after `--`: a harness that guesses what your suite is runs the wrong thing on the day it matters. A repository's *policy* — which marker sets apply, which lines are excused — can live in `tests/t.conf`, which never carries the command for the same reason. Its own verdicts sit in an exit-code band no test runner uses, 64 to 89, so a suite's own 2 or 4 is never mistaken for one. `t.sh help` carries the flags, the variables and the codes
 
@@ -69,6 +70,7 @@ markers/              what a lying log says, as data: default.txt always, the re
 references/           one spec per rule, ecosystems/ for the per-language specifics, sources.md for the evidence
 templates/            defects.sh for falsify, t.conf for a repository's own policy
 check.sh              this repo's own gate, self-tested against known-bad inputs
+check-sh.sh           the bash-best-practices skill's checker, holding t.sh's help and the docs to its dispatcher, vendored
 tests/fixtures/       lying/ the runs the markers must catch, clean/ the healthy ones they must not
 ```
 

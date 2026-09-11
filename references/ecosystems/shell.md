@@ -9,17 +9,7 @@ t.sh run -- bats --print-output-on-failure tests/
 t.sh run -- ./tests/run.sh
 ```
 
-Every script under test, and every harness, opens with:
-
-```sh
-set -euo pipefail
-```
-
-- `-e` stops at the first failing command — but **not** inside `if`, `while`, `&&`, `||`, or a function whose result is tested, which is where most surprises live
-- `-u` makes an unset variable an error, so a typo'd name is not silently empty. `${VAR:-}` where empty is legitimate
-- `-o pipefail` makes a pipeline report the last non-zero status. Without it, `false | true` succeeds — and so does `pytest | tail`
-
-`${PIPESTATUS[0]}` is bash, and must be read immediately after the pipeline: any command in between, `echo` included, replaces it. **zsh spells it `$pipestatus` and indexes from 1**, so a line copied from a bash script silently yields an empty string there. Scripts get `#!/usr/bin/env bash`, not `sh`, when they use any of this
+Every script under test, and every harness, opens with `set -euo pipefail`. What each flag does, where `-e` does not fire, how `PIPESTATUS` is read before the next command replaces it, why zsh's `$pipestatus` is not the same thing, and why the shebang is `#!/usr/bin/env bash` rather than `sh` are the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's, in its `references/shape.md` and `references/harness.md`; what follows is what testing shell adds
 
 ## Green that lies
 
@@ -33,10 +23,7 @@ set -euo pipefail
 | `: No such file or directory` in a passing run | a path assumption held on one machine only |
 | nothing at all | a `for` loop over an empty glob, which succeeds |
 
-Two shapes worth knowing:
-
-- **A `for` loop returns its last iteration's status**, so a loop that fails in the middle and succeeds at the end succeeds. Track failures in a counter and exit on it
-- **`yes | cmd` under `pipefail`** turns `yes`'s normal SIGPIPE death into a pipeline failure. Use `yes 2>/dev/null | cmd` or restructure
+Two shapes that make a suite lie — a `for` loop returning only its last iteration's status, and `yes | cmd` failing under `pipefail` on `yes`'s ordinary SIGPIPE death — are language rules rather than testing ones, and live in the bash-best-practices skill's `references/shape.md`
 
 ## Fail on nothing ran, natively
 
@@ -44,7 +31,7 @@ bats has it the right way round: a suite with no tests exits 1 unless `--allow-e
 
 ## Determinism and isolation
 
-- `mktemp -d` plus a `trap ... EXIT` for cleanup. Never a fixed path under `/tmp`
+- One `mktemp -d` with a template plus a `trap … EXIT` for cleanup, never a fixed path under `/tmp` — the spelling is the bash-best-practices skill's, in `references/shape.md`
 - Stub external tools by putting a directory first on `PATH` — and then **assert that the stub is what resolves** (`command -v tool` equals your stub, and the stub is executable). A stub the script never reaches hands the suite the real tool, and for something like a compositor client or a package manager that means the suite is driving the real system while reporting success
 - Stubs written as `#!/bin/sh`, not `#!/usr/bin/env bash`: a sandbox may have no `/usr/bin`
 - Anything interactive gets a `timeout`, or a prompt style nobody predicted becomes a hanging job rather than a red one

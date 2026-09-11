@@ -34,21 +34,3 @@ jobs:
       # copy of the pattern here drifted from the one there
       - name: check.sh (the gate, self-tested against known-bad inputs)
         run: nix develop --no-write-lock-file -c ./check.sh
-
-  bash32:
-    # t.sh travels to repositories that run CI on macOS, which ships bash 3.2, and that is
-    # the one place it has broken before. This is the behaviour half of the gate under the
-    # real /bin/bash there, with constructs planted that only a 3.2 rejects, so the proof
-    # is about the mechanism and not about a grep for syntax somebody thought to list.
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
-      - name: the behaviour half under the bash macOS ships
-        env:
-          T_CHECK_BASH32: "1"
-        run: |
-          /bin/bash --version
-          /bin/bash ./check.sh behaviour

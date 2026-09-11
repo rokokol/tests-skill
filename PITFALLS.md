@@ -4,11 +4,7 @@ Traps found while working on this repository, kept so the next person editing it
 
 ## Backgrounding the gate needs `set -m`, or its signal probes report nothing
 
-Running copies in parallel is fine; running them off the foreground without job control is not. POSIX has a non-interactive shell start background jobs with `SIGINT` and `SIGQUIT` set to ignore, an ignored disposition is inherited by everything the job spawns, and `check_behaviour` asserts what `bisect-probe` makes of a command killed by a signal — `probe 130 "is interrupted by the user" -- sh -c 'kill -INT $$'` among them. The signal then does nothing and the probe reports 0. Sixteen copies started with a plain `&` failed identically on that line; the same sixteen under `set -m` were all clean, because job control gives each its own process group and the default dispositions back
-
-The gate now runs its copies in parallel and does exactly that: `run_rows` brackets the batch in `set -m`. The fix is that one line rather than any supervision by hand, and it only bites a suite that tests signal handling, which this one does because `bisect-probe` has to tell a crash from a person pressing Ctrl-C
-
-The failure at least announces itself. The danger is reading it as a load problem and relaxing the check
+A background job of a non-interactive shell starts with `SIGINT` and `SIGQUIT` ignored, and everything it spawns inherits that — the rule and its measurement are the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's, in its `references/pitfalls.md`. Here it bites because `check_behaviour` asserts what `bisect-probe` makes of a command killed by a signal, `probe 130 "is interrupted by the user" -- sh -c 'kill -INT $$'` among them: sixteen copies started with a plain `&` failed identically on that line, the same sixteen under `set -m` were all clean, and `run_rows` now brackets the batch in `set -m`. The failure at least announces itself; the danger is reading it as a load problem and relaxing the check
 
 ## The behaviour half survives heavy concurrency, and its deadlines are not the fragile part
 
@@ -20,11 +16,11 @@ And then wait for the state itself, not for the announcement of it. Waiting on t
 
 ## A local in a new subcommand collides with a global shellcheck already knows
 
-`t.sh` is one file, so shellcheck sees every function's locals at once and takes a name used as an array in one and as a scalar in another for a mistake. Adding `cmd_pollute` cost three renames on that alone: `set` shadows the builtin, `first` is a scalar in `falsify`, and `cmd` is the dispatcher's own variable at the bottom of the file. The warnings point at the *other* use, which is why they read as unrelated. Pick names nothing else in the file uses, and run `shellcheck` before running anything else
+shellcheck sees every function's locals in a file at once, and the warning points at the *other* use — the bash-best-practices skill's `references/pitfalls.md` has the rule. In `t.sh` adding `cmd_pollute` cost three renames on that alone: `set` shadows the builtin, `first` is a scalar in `falsify`, and `cmd` is the dispatcher's own variable at the bottom of the file
 
 ## A re-raised signal still runs the EXIT trap
 
-The idiom for a signal handler is to clean up, reset the trap and re-raise — `trap - INT; kill -INT $$` — and it is easy to assume the script then dies without its EXIT trap. It does not: bash runs EXIT anyway, verified on a five-line script. So a copy planted to prove that the INT handler restores a file will pass with the restore stripped from INT alone, because EXIT restores it instead. Take the cleanup off every trap, or prove nothing
+`trap - INT; kill -INT $$` does not skip EXIT; the five-line proof is in the bash-best-practices skill's `references/pitfalls.md`. Here it means a copy planted to prove that the INT handler restores a file passes with the restore stripped from INT alone, because EXIT restores it instead: take the cleanup off every trap, or prove nothing
 
 ## `nix flake check` proves only the system it runs on
 
@@ -32,7 +28,7 @@ It reads the current system, prints "all checks passed" and says nothing about t
 
 ## An undefined regex escape is a warning, not a difference
 
-`flags_of` matched with `\ ` for a space, which POSIX leaves undefined. gawk, mawk, busybox awk, goawk and the one-true-awk macOS ships were each run over the four shapes the pattern has to read, and all five agree it is a space. The defect was never a wrong answer; it was twenty-nine warnings on stderr in a run that ended `check: everything holds`. Fix such a thing for the noise, not for a portability story that measurement does not support
+`flags_of` matched with `\ ` for a space, which POSIX leaves undefined; five awks were measured and all agree it is a space, and the rule — fix it for the noise, not for a portability story measurement does not support — is the bash-best-practices skill's, in its `references/pitfalls.md`. Here the defect was twenty-nine warnings on stderr in a run that ended `check: everything holds`
 
 ## Read a probe's whole output, not its tail
 

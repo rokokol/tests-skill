@@ -54,7 +54,7 @@ Where the rules come from, one line per source, grouped by the reference that us
 
 ## Bash 3.2 and BSD userland
 
-- [Bash CHANGES](https://tiswww.case.edu/php/chet/bash/NEWS) — what each version added; the macOS man pages for [sed](https://man.freebsd.org/cgi/man.cgi?query=sed&sektion=1&manpath=macOS+14.3.1), [grep](https://man.freebsd.org/cgi/man.cgi?query=grep&sektion=1&manpath=macOS+14.3.1), [readlink](https://man.freebsd.org/cgi/man.cgi?query=readlink&sektion=1&manpath=macOS+14.3.1) and [date](https://man.freebsd.org/cgi/man.cgi?query=date&sektion=1&manpath=macOS+14.3.1) — `sed -i` needs an argument, no `grep -P`, `readlink -f` from 12.3, no `date -d`, no `timeout`
+- What the bash macOS ships lacks, and what its BSD userland does differently, is the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's subject: the bash NEWS file and the macOS man pages behind `t.sh`'s portability are cited in its `references/sources.md`, and the rules they support in its `references/portability.md`
 
 ## Adjacent skills, read and not depended on
 

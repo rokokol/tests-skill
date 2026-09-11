@@ -10,6 +10,7 @@
 [![pitfalls](https://img.shields.io/badge/docs-pitfalls-555?style=flat)](PITFALLS.md)
 [![license](https://img.shields.io/badge/MIT-3DA639?style=flat)](LICENSE)
 [![ci](https://github.com/rokokol/tests-skill/actions/workflows/build.yml/badge.svg)](https://github.com/rokokol/tests-skill/actions/workflows/build.yml)
+[![macos](https://github.com/rokokol/tests-skill/actions/workflows/macos.yml/badge.svg)](https://github.com/rokokol/tests-skill/actions/workflows/macos.yml)
 
 </div>
 
@@ -77,8 +78,9 @@ The core is not negotiable because every rule in it is true in any language. Eve
 | `t.sh bisect GOOD -- CMD` | which commit broke it, skipping the ones that cannot answer |
 | `t.sh falsify -- CMD` | which guards the suite would not notice being broken |
 | `t.sh prove [REF] -- CMD` | does the commit's own test go red when its fix is taken away |
+| `t.sh bisect-probe [FLAGS] -- CMD` | internal: the single-commit verdict `git bisect run` calls at each step, not for hand use |
 
-`run` is the only place a verdict is formed and the others call it, so `bisect` cannot drift away from `run` about what counts as a failure. It exits with the command's own status and writes the kind of verdict beside the log as `LOG.verdict`, one word; its own verdicts sit in a band no test runner uses, 64 to 89, because the low numbers were tried first and collide: GNU make exits 2 on any error, pytest uses 2 to 5, and cargo-nextest exits 4 for "no tests ran", the very thing `run` exists to catch. `t.sh help` carries every flag, variable and code, and the gate reads that help against the parsers so the two cannot drift
+`run` is the only place a verdict is formed and the others call it, so `bisect` cannot drift away from `run` about what counts as a failure. It exits with the command's own status and writes the kind of verdict beside the log as `LOG.verdict`, one word; its own verdicts sit in a band no test runner uses, 64 to 89, because the low numbers were tried first and collide: GNU make exits 2 on any error, pytest uses 2 to 5, and cargo-nextest exits 4 for "no tests ran", the very thing `run` exists to catch. `t.sh help` carries every flag, variable and code, and the gate holds that help to the parsers with the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's `check-sh.sh`, so the two cannot drift
 
 `bisect` speaks git's vocabulary properly: 125 for a commit that cannot answer — one that will not build, has no test runner yet, or whose log says nothing ran — a crash clamped to "bad" rather than the 139 that would abort the whole session, and a Ctrl-C passed through so it does abort. It names the culprit on its own line, reports a history where only such commits are left as `INCONCLUSIVE`, keeps git's session log for a replay, and refuses to start over a bisect already in progress
 
@@ -115,7 +117,7 @@ nix develop -c ./check.sh lint         # what the skill ships: scripts, workflow
 
 The lint half runs the [ci](https://github.com/rokokol/ci-skill) skill's own gates for a skill repository, `check-skill.sh` and `check-pins.sh`, vendored, lints every script, holds every document to one paragraph per line, and reads the marker files exactly as `run` reads them: every entry must catch a line in its set's lying fixture and stay quiet on a real healthy run of its tool, kept under `tests/fixtures/clean/`, so a dead marker cannot sit there looking like a guard and a noisy one cannot redden good runs
 
-The behaviour half is proven the same way: a command exiting 7 through a pipe must still be reported 7; a green run whose log says nothing was collected must not be a pass; a config with an unknown key must refuse rather than skip it; `bisect` must name the known culprit across a history containing a commit that will not build and say `INCONCLUSIVE` where nothing can answer; `falsify` must return each of its verdicts on a fixture built to produce exactly one of each, time out a defect that hangs, and put the source back byte for byte after an interrupt; `prove` must tell a test that pins its fix from one that does not. CI runs this half on a macOS runner under `/bin/bash` 3.2, with a `declare -A` and a `mapfile` planted in copies that must fail there, because a grep for bash-4 syntax was the guard once and let nine constructs through
+The behaviour half is proven the same way: a command exiting 7 through a pipe must still be reported 7; a green run whose log says nothing was collected must not be a pass; a config with an unknown key must refuse rather than skip it; `bisect` must name the known culprit across a history containing a commit that will not build and say `INCONCLUSIVE` where nothing can answer; `falsify` must return each of its verdicts on a fixture built to produce exactly one of each, time out a defect that hangs, and put the source back byte for byte after an interrupt; `prove` must tell a test that pins its fix from one that does not. CI runs this half on a macOS runner under `/bin/bash` 3.2 through the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's `macos.yml` workflow, with a `declare -A` and a `mapfile` planted in copies that must fail there, because a grep for bash-4 syntax was the guard once and let nine constructs through
 
 Then every check is proven able to fail: a copy of the repository per planted defect, and each copy must fail for its own defect's reason. Every one of them was watched failing first — a dozen found real bugs in this repository while being written, three of them only under a real bash 3.2
 
@@ -131,6 +133,7 @@ PITFALLS.md           maintainer traps in this gate and its harness
 check.sh              the self-testing gate, in a lint half and a behaviour half
 check-skill.sh        the ci skill's gate for a skill repository, vendored
 check-pins.sh         the ci skill's pin guard for the workflows, vendored
+check-sh.sh           the bash-best-practices skill's checker, holding t.sh's help and these docs to its dispatcher, vendored
 vendor-sync.sh        the ci skill's tool that keeps the vendored copies byte-equal to their source, vendored
 tests/fixtures/       lying/ the runs the markers must catch, clean/ the healthy ones they must not
 ```

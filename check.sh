@@ -22,7 +22,7 @@ cd "$HERE"
 
 # One source of truth for what gets linted. A second copy of this list drifts, and a
 # drifted list lies about what was checked.
-scripts=(t.sh check.sh check-skill.sh check-pins.sh vendor-sync.sh templates/defects.sh tests/upstream.sh)
+scripts=(t.sh check.sh check-sh.sh check-skill.sh check-pins.sh vendor-sync.sh templates/defects.sh tests/upstream.sh)
 
 # The skill's own name, as the frontmatter, the readme and the symlink all spell it
 skill_name=tests
@@ -1186,35 +1186,14 @@ DEFECTS
 
   echo "== the help is complete: every subcommand, every flag, every variable, every exit code"
   # The help is hand-written text and the parsers are code, and the two drift the moment
-  # a flag is added to one and not the other. So the gate reads the truth out of the code
-  # — the dispatcher's subcommands, each parser's flags, the T_ variables the script reads,
-  # the codes it returns — and requires each to be in the help. Extractors that find
-  # nothing fail, because an empty list passes every loop.
-  help=$(tsh help)
-  subs=()
-  while IFS= read -r sub; do subs+=("$sub"); done < <(sed -n 's/^  \([a-z-]*\)) cmd_[a-z_]*.*/\1/p' t.sh)
-  ((${#subs[@]} >= 4)) || fail "only ${#subs[@]} subcommand(s) could be read out of t.sh — the extractor is broken"
-  for sub in "${subs[@]}"; do
-    grep -qF "t.sh $sub" <<<"$help" ||
-      fail "t.sh dispatches '$sub' but its help never mentions it"
-    sub_help=$(tsh help "$sub") || fail "t.sh help $sub refused"
-    flags=0
-    while IFS= read -r flag; do
-      [[ -n "$flag" ]] || continue
-      flags=$((flags + 1))
-      # A `]` is literal only first in a bracket expression, and `\]` is not an escape
-      # there — GNU grep 3.12 read the escaped form as the bracket's end
-      grep -qE -- "(^|[[:space:][])${flag}([][:space:],]|$)" <<<"$sub_help" ||
-        fail "t.sh $sub accepts $flag but 't.sh help $sub' never mentions it"
-    done < <(flags_of "$sub")
-    [[ "$sub" == help ]] || ((flags > 0)) || fail "no flags could be read out of cmd_$sub — the extractor is broken"
-  done
-  variables=0
-  while IFS= read -r var; do
-    variables=$((variables + 1))
-    grep -qF -- "$var" <<<"$help" || fail "t.sh reads $var but its help never mentions it"
-  done < <(grep -oE '(^|[^A-Z_])T_[A-Z_]+' t.sh | sed 's/^[^T]//' | sort -u)
-  ((variables >= 4)) || fail "only $variables T_ variable(s) could be read out of t.sh — the extractor is broken"
+  # a flag is added to one and not the other. The bash-best-practices skill's check-sh.sh,
+  # vendored, reads the truth out of the code — the dispatcher's subcommands, each
+  # parser's flags, the T_ variables the script reads, the literal codes it returns — and
+  # requires each to be in the help, then holds every `t.sh …` the docs mention to the
+  # dispatcher. It plants its own defects on every run. What stays here is what it does
+  # not read: the verdict band returned from functions rather than exited, and whether
+  # help refuses a topic it does not have
+  "$BASH" ./check-sh.sh -n t.sh -e T_ -d SKILL.md -d README.md t.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do
@@ -1263,7 +1242,7 @@ check_proofs() {
     # "all clear" lines to stdout under the same check-skill:/check-pins: prefix
     out=$( (cd "$dir" && T_CHECK_NESTED=1 "$BASH" ./check.sh "$half" 2>&1 >/dev/null) || :)
     local line
-    line=$(grep -m 1 -E '^check(-skill|-pins)?:' <<<"$out" || :)
+    line=$(grep -m 1 -E '^check(-skill|-pins|-sh)?:' <<<"$out" || :)
     [[ -n "$line" ]] || fail "$what: the copy did not fail at all"
     [[ "$line" == *"$want"* ]] ||
       fail "$what: the copy failed for another reason — $line"
@@ -1532,7 +1511,7 @@ check_proofs() {
     # one that failed, so planting only the $? would prove nothing.
     plant behaviour blind "for a command that exited 7" "a run reading tee's status" \
       sed t.sh 's/^set -uo pipefail$/set -u/; s/local -a ps=("${PIPESTATUS\[@\]}")/local -a ps=($?)/' 'local -a ps=($?)'
-    plant behaviour undocumented "its help never mentions it" "a subcommand missing from the help" \
+    plant behaviour undocumented "its help never mentions 't.sh wat'" "a subcommand missing from the help" \
       awk t.sh '/^  flaky\) cmd_flaky/ && !done { print "  wat) cmd_run \"$@\" ;;"; done=1 } { print }' 'wat) cmd_run'
     # Only the help text is touched: the parser keeps --any-file, so the flag is real and
     # undocumented, which is the drift being caught
@@ -1635,13 +1614,13 @@ check_proofs() {
   # is a proxy, matching the constructs somebody thought to list, and it let nine through
   # on its first audit. The mechanism is this: the behaviour half under the real 3.2, on a
   # macOS runner, with two constructs planted that only a 3.2 rejects. Under a newer bash
-  # they are no defect at all, so this block runs only where T_CHECK_BASH32 says which
+  # they are no defect at all, so this block runs only where CHECK_BASH32 says which
   # bash this is, and first checks that claim.
-  if [[ -n "${T_CHECK_BASH32:-}" ]]; then
+  if [[ -n "${CHECK_BASH32:-}" ]]; then
     echo "== this bash is the 3.2 the proof is about"
     ((BASH_VERSINFO[0] == 3)) ||
-      fail "T_CHECK_BASH32 is set, but this is bash $BASH_VERSION — on macOS, run: /bin/bash ./check.sh behaviour"
-    ! "$BASH" -c 'declare -A m' >/dev/null 2>&1 || fail "T_CHECK_BASH32 is set, but this bash accepts declare -A"
+      fail "CHECK_BASH32 is set, but this is bash $BASH_VERSION — on macOS, run: /bin/bash ./check.sh behaviour"
+    ! "$BASH" -c 'declare -A m' >/dev/null 2>&1 || fail "CHECK_BASH32 is set, but this bash accepts declare -A"
     plant behaviour bash4-declare "(got 70)" "a harness that declares an associative array" \
       awk t.sh '{ print } /^set -uo pipefail$/ { print "declare -A t_sh_probe || exit 70" }' 'declare -A t_sh_probe'
     # mapfile is not found, the marker list stays empty, and run refuses every command —
