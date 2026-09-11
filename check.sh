@@ -1192,8 +1192,12 @@ DEFECTS
   # requires each to be in the help, then holds every `t.sh …` the docs mention to the
   # dispatcher. It plants its own defects on every run. What stays here is what it does
   # not read: the verdict band returned from functions rather than exited, and whether
-  # help refuses a topic it does not have
-  "$BASH" ./check-sh.sh -n t.sh -e T_ -d SKILL.md -d README.md t.sh
+  # help refuses a topic it does not have. Every reference is held backwards as well, with
+  # -m, which asks no list of it: a renamed subcommand cannot leave a ghost in one, and a
+  # reference added later is covered by the glob rather than by a list kept here
+  ref_docs=()
+  for f in references/*.md references/ecosystems/*.md; do ref_docs+=(-m "$f"); done
+  "$BASH" ./check-sh.sh -n t.sh -e T_ -d SKILL.md -d README.md "${ref_docs[@]}" t.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do

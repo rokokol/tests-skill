@@ -6,6 +6,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Changed
 
+- the gate holds every `t.sh …` mention in `references/` to the dispatcher as well, through `check-sh.sh -m`, so a renamed or removed subcommand cannot survive in a reference page; thirteen of them spell one
 - the stub shebang rule in `references/ecosystems/shell.md` is narrowed to what it protects against: a stub the test writes while it runs is `#!/bin/sh`, because a build sandbox has `/bin/sh` and no `/usr/bin/env` and nothing rewrites a file created mid-build, while a stub committed to the repository may keep `#!/usr/bin/env bash` when the build runs `patchShebangs` over the checkout first
 - the root maintainer record follows the dedicated-document convention as `PITFALLS.md` and is linked from a header badge; its role stays the same, separate from the test standard in `SKILL.md` and `references/`
 - the bash rules that lived here as testing rules — the `set -euo pipefail` flags and where `-e` does not fire, `PIPESTATUS` and zsh's `$pipestatus`, the shebang, a `for` loop's status, `yes | cmd` under `pipefail`, `mktemp -d` with a `trap`, the bash 3.2 and BSD sources, and the four general traps in `PITFALLS.md` — are the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's now, stated there once with their evidence; `references/ecosystems/shell.md`, `references/sources.md` and `PITFALLS.md` keep what is about this repository and point there for the rest
