@@ -375,8 +375,7 @@ test("a negative reading becomes zero", () => {
   expect(Math.max(0, -5)).toBe(0);
 });
 JS
-    # Snapshot-writing scenarios exercise Jest's non-CI default regardless of the observer.
-    jest_() { (cd "$d" && env -u CI HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/jest "$@"); }
+    jest_() { (cd "$d" && HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/jest "$@"); }
     vitest_() { (cd "$d" && HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/vitest "$@"); }
 
     run "$work/nd.healthy" vitest_ run good
@@ -390,7 +389,9 @@ JS
     # long time reddening every healthy cargo test with nothing watching it.
     mkdir -p "$d/snapok"
     printf 'test("a snapshot that matches", () => { expect({a:1}).toMatchSnapshot(); });\n' >"$d/snapok/s.test.js"
-    run "$work/nd.snapwrite" jest_ snapok
+    # Ask for the behavior under test directly: Jest recognizes provider-specific variables
+    # such as GITHUB_ACTIONS as CI even when CI itself is unset.
+    run "$work/nd.snapwrite" jest_ --updateSnapshot snapok
     run "$work/nd.healthy2" jest_ snapok
     check_healthy "$work/nd.healthy2" "$?"
 
@@ -407,7 +408,7 @@ JS
     declare_situation honest "a jest suite that will not load" "$?" "$work/nd.broken"
 
     printf 'test("one snapshot", () => { expect({a:1}).toMatchSnapshot(); });\n' >"$d/snap/s.test.js"
-    run "$work/nd.snap" jest_ snap
+    run "$work/nd.snap" jest_ --updateSnapshot snap
     declare_situation lies "a snapshot written by the run that was meant to check it" "$?" "$work/nd.snap"
     printf 'test("other", () => { expect(1).toBe(1); });\n' >"$d/snap/s.test.js"
     run "$work/nd.obsolete" jest_ snap
@@ -416,7 +417,7 @@ JS
     declare_situation honest "a snapshot nothing compares against any more" "$?" "$work/nd.obsolete"
 
     printf 'test("a", () => { expect({a:1}).toMatchSnapshot(); });\ntest("b", () => { expect({b:2}).toMatchSnapshot(); });\n' >"$d/snap2/s.test.js"
-    run "$work/nd.snaps" jest_ snap2
+    run "$work/nd.snaps" jest_ --updateSnapshot snap2
     declare_situation lies "two snapshots written, for the plural the set also carries" "$?" "$work/nd.snaps"
 
     for i in 1 2 3; do
