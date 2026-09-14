@@ -45,25 +45,6 @@ These are choices, and [references/layers.md](references/layers.md) gives the cr
 
 The command is always explicit, after `--`: a harness that guesses what your suite is runs the wrong thing on the day it matters. A repository's *policy* — which marker sets apply, which lines are excused — can live in `tests/t.conf`, which never carries the command for the same reason. Its own verdicts sit in an exit-code band no test runner uses, 64 to 89, so a suite's own 2 or 4 is never mistaken for one
 
-## Taking the harness into another repository
-
-`t.sh` and `markers/` are what this skill hands to other repositories, and `t.sh` reads its markers from the directory beside it, so the two travel together. They come by the ci skill's vendoring cascade rather than by hand: `vendor-sync.sh add scripts/t.sh rokokol/tests-skill t.sh` and `vendor-sync.sh add scripts/markers/ rokokol/tests-skill markers/` write the copies and their lock lines, and the weekly cascade brings every later fix. A fix to a copy belongs here, where every copy then gets it. What stays the repository's own is written there, not taken: `tests/t.conf` for its policy and `tests/defects.sh` for falsify, starting from `templates/`. The mechanism itself is described once, in the ci skill's [vendored files](https://github.com/rokokol/ci-skill/blob/master/references/bump-cascade.md#vendored-files)
-
-## Layout
-
-```
-SKILL.md              this file — the core, the modes, the harness, the checklist
-t.sh                  the harness — `t.sh help` for every subcommand, flag, variable and code
-markers/              what a lying log says, as data: default.txt always, the rest via -m
-references/           one spec per rule, ecosystems/ for the per-language specifics, sources.md for the evidence
-templates/            defects.sh for falsify, t.conf for a repository's own policy
-check.sh              this repo's own gate, self-tested against known-bad inputs
-check-sh.sh           the bash-best-practices skill's checker, holding t.sh's help and the docs to its dispatcher, vendored
-tests/fixtures/       lying/ the runs the markers must catch, clean/ the healthy ones they must not
-```
-
-CI doctrine — what may gate a pull request, pinning, badges, dependency cascades — is not duplicated here: it lives in the [ci](https://github.com/rokokol/ci-skill) skill. What may go in a commit *message* lives in [ai-commit-trailers](https://github.com/rokokol/ai-commit-trailers-skill)
-
 ## Before you say it works
 
 - The command came from the repository's CI or its wrapper, not from a guess — [tdd.md](references/tdd.md)

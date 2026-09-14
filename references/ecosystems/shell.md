@@ -9,7 +9,7 @@ t.sh run -- bats --print-output-on-failure tests/
 t.sh run -- ./tests/run.sh
 ```
 
-Every script under test, and every harness, opens with `set -euo pipefail`. What each flag does, where `-e` does not fire, how `PIPESTATUS` is read before the next command replaces it, why zsh's `$pipestatus` is not the same thing, and why the shebang is `#!/usr/bin/env bash` rather than `sh` are the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's, in its `references/shape.md` and `references/harness.md`; what follows is what testing shell adds
+A Bash test harness normally starts with `set -euo pipefail`, but those flags do not propagate every verdict automatically: `-e` has control-flow exceptions, the next simple command replaces `PIPESTATUS`, and zsh's `$pipestatus` is not a portable substitute. Use a Bash shebang rather than `sh` when the harness relies on Bash syntax
 
 ## Green that lies
 
@@ -23,7 +23,7 @@ Every script under test, and every harness, opens with `set -euo pipefail`. What
 | `: No such file or directory` in a passing run | a path assumption held on one machine only |
 | nothing at all | a `for` loop over an empty glob, which succeeds |
 
-Two shapes that make a suite lie — a `for` loop returning only its last iteration's status, and `yes | cmd` failing under `pipefail` on `yes`'s ordinary SIGPIPE death — are language rules rather than testing ones, and live in the bash-best-practices skill's `references/shape.md`
+Two shell rules commonly distort a suite's verdict: a `for` loop returns only its last iteration's status, and `yes | cmd` fails under `pipefail` because `yes` normally exits on SIGPIPE
 
 ## Fail on nothing ran, natively
 
@@ -31,9 +31,9 @@ bats has it the right way round: a suite with no tests exits 1 unless `--allow-e
 
 ## Determinism and isolation
 
-- One `mktemp -d` with a template plus a `trap … EXIT` for cleanup, never a fixed path under `/tmp` — the spelling is the bash-best-practices skill's, in `references/shape.md`
+- One `mktemp -d` with a template plus a `trap … EXIT` for cleanup, never a fixed path under `/tmp`
 - Stub external tools by putting a directory first on `PATH` — and then **assert that the stub is what resolves** (`command -v tool` equals your stub, and the stub is executable). A stub the script never reaches hands the suite the real tool, and for something like a compositor client or a package manager that means the suite is driving the real system while reporting success
-- A stub the test writes while it runs is `#!/bin/sh`, not `#!/usr/bin/env bash`: a build sandbox such as Nix's has `/bin/sh` and no `/usr/bin/env`, and nothing rewrites a file created after the build started. A stub committed to the repository may keep `#!/usr/bin/env bash` when the build runs `patchShebangs` over the checkout before the suite, as the huix family's flakes do (`claude-account/flake.nix:83`) — that rewrites it to the store's bash
+- A stub the test writes while it runs is `#!/bin/sh`, not `#!/usr/bin/env bash`: a build sandbox such as Nix's has `/bin/sh` and no `/usr/bin/env`, and nothing rewrites a file created after the build started. A stub committed to the repository may keep `#!/usr/bin/env bash` when the build runs `patchShebangs` over the checkout before the suite that rewrites it to the store's bash
 - Anything interactive gets a `timeout`, or a prompt style nobody predicted becomes a hanging job rather than a red one
 
 ## For `tests/defects.sh`

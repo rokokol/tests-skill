@@ -47,4 +47,4 @@ Deleting an unstable test is a legitimate outcome, provided it is deliberate and
 
 ## The one place a retry is defensible
 
-A check whose subject is genuinely outside the repository — a package mirror, a CDN, a live site — may retry, because its failures are about someone else's afternoon. But such a check should not have been gating a pull request in the first place; it belongs to the weekly drift detector. That split is the [ci](https://github.com/rokokol/ci-skill) skill's gate-versus-detector rule, and it is the real fix for most "flaky CI". The evidence for the numbers above is in [sources.md](sources.md)
+A check whose subject is genuinely outside the repository — a package mirror, a CDN, a live site — may retry, because its failures are about someone else's afternoon. Such a check should not gate a pull request in the first place; run it as a scheduled drift detector instead. The evidence for the numbers above is in [sources.md](sources.md)

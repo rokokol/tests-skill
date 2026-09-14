@@ -54,8 +54,4 @@ Where the rules come from, one line per source, grouped by the reference that us
 
 ## Bash 3.2 and BSD userland
 
-- What the bash macOS ships lacks, and what its BSD userland does differently, is the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's subject: the bash NEWS file and the macOS man pages behind `t.sh`'s portability are cited in its `references/sources.md`, and the rules they support in its `references/portability.md`
-
-## Adjacent skills, read and not depended on
-
-While this skill was being written, the testing, debugging and verification skills published for coding agents by several authors were read for ideas — among them the superpowers, qa-skills, augmentedcode-skills, agent-skills and trailofbits collections. What was borrowed is stated as a rule in the references above, in this skill's own words; nothing here links to or loads any of them, because a rule that depends on somebody else's repository staying where it was is a rule that can vanish
+- [Bash NEWS](https://tiswww.case.edu/php/chet/bash/NEWS) dates constructs added after Bash 3.2; the macOS [mktemp(1)](https://man.freebsd.org/cgi/man.cgi?query=mktemp&sektion=1&manpath=macOS+14.8.5) page documents the BSD interface used by temporary-directory checks

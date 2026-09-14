@@ -24,7 +24,7 @@ Read this as a menu with prices, not a checklist
 
 - **Put the weight where a failure would be expensive**, not where tests are easy to write. Counting tests optimises for the easy layer
 - **Each layer earns its place by answering a question the layer below cannot.** Three layers asserting the same thing cost three times as much and fail together
-- **Anything that reaches outside the repository does not gate a change.** Mirrors, CDNs, live sites: their failures are about someone else's uptime. They belong to a scheduled drift detector — the [ci](https://github.com/rokokol/ci-skill) skill's gate-versus- detector rule
+- **Anything that reaches outside the repository does not gate a change.** Mirrors, CDNs and live sites fail with someone else's uptime, so run those checks as scheduled drift detectors instead
 - **A layer nobody runs is worse than none.** It costs maintenance, and its existence is used as an argument that the area is covered
 
 ## Fakes: what each one costs

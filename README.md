@@ -137,5 +137,3 @@ check-sh.sh           the bash-best-practices skill's checker, holding t.sh's he
 vendor-sync.sh        the ci skill's tool that keeps the vendored copies byte-equal to their source, vendored
 tests/fixtures/       lying/ the runs the markers must catch, clean/ the healthy ones they must not
 ```
-
-CI doctrine — what may gate a pull request, pinning, badges, dependency cascades — is not duplicated here; it lives in the [ci](https://github.com/rokokol/ci-skill) skill. What may go in a commit *message* lives in [ai-commit-trailers](https://github.com/rokokol/ai-commit-trailers-skill)

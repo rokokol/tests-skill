@@ -50,7 +50,7 @@ The `.only` family is the other silent reduction: vitest's `--allowOnly` default
 
 `test.only`, `it.only` and `describe.only` run one test and skip the rest of the file. They are the right tool while you are chasing one failure among fifty, and the whole problem is that they survive a commit: CI then runs the one, prints `Tests: 1 passed | 2 skipped (3)`, exits 0, and the suite has stopped running while the build stays green
 
-No runner says so. Measured on jest 30 and vitest 3: neither prints the words `test.only` anywhere, and the only trace is a skip count that a suite skipping a test for a missing browser produces just as readily. `markers/node.txt` carried those three strings for a while, and they could not have matched anything a runner wrote
+No runner says so. Measured on jest 30 and vitest 3: neither prints the words `test.only` anywhere, and the only trace is a skip count that a suite skipping a test for a missing browser produces just as readily. Log markers for `test.only`, `it.only` or `describe.only` therefore cannot detect the defect
 
 The guard is the configuration:
 

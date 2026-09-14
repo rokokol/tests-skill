@@ -114,8 +114,8 @@ check_lint() {
     actionlint
   fi
   # This repo follows its own advice about pinning: a job that resolves a tool at run time
-  # changes behaviour with zero change in the repository. The guard is the ci skill's
-  # check-pins.sh, vendored, which proves on every run that it catches each shape it
+  # changes behaviour with zero change in the repository. The guard is check-pins.sh from
+  # https://github.com/rokokol/ci-skill, vendored, which proves that it catches each shape it
   # claims to and stays quiet on the pinned spellings. Every vendored copy must still be
   # the blob .github/vendor.lock records, so one edited here fails by name first.
   ./vendor-sync.sh check
@@ -141,8 +141,8 @@ check_lint() {
     fail "the flake does not offer a dev shell on x86_64-linux, which is what CI runs the gate on"
 
   echo "== SKILL.md loads, every reference is reachable, every link and anchor resolves"
-  # The ci skill's gate for a skill repository, copied verbatim: the frontmatter an agent
-  # loads the skill by, reachability as a real walk over links from SKILL.md, and every
+  # The skill gate from https://github.com/rokokol/ci-skill, copied verbatim: the frontmatter
+  # an agent loads the skill by, reachability as a real walk over links from SKILL.md, and every
   # relative link and heading anchor. It falsifies itself on copies of the repository.
   ./check-skill.sh -n "$skill_name" .
 
@@ -156,8 +156,8 @@ check_lint() {
 
   echo "== no paragraph in any document is hard-wrapped"
   # GitHub soft-wraps, so a manual break inside a paragraph only means a one-word edit
-  # reflows every line after it. The create-readme skill's rule for the readme, applied to
-  # every document here: a reference is read by an agent and by a person on GitHub alike,
+  # reflows every line after it. The rule from https://github.com/rokokol/create-readme-skill,
+  # applied to every document here: a reference is read by an agent and by a person on GitHub alike,
   # and the diff of a one-word edit should be one line in either.
   hard_wrapped() { # hard_wrapped FILE -> prints the offending line numbers
     awk '
@@ -1203,8 +1203,9 @@ DEFECTS
 
   echo "== the help is complete: every subcommand, every flag, every variable, every exit code"
   # The help is hand-written text and the parsers are code, and the two drift the moment
-  # a flag is added to one and not the other. The bash-best-practices skill's check-sh.sh,
-  # vendored, reads the truth out of the code — the dispatcher's subcommands, each
+  # a flag is added to one and not the other. The check-sh.sh from
+  # https://github.com/rokokol/bash-best-practices-skill, vendored, reads the truth out of
+  # the code — the dispatcher's subcommands, each
   # parser's flags, the T_ variables the script reads, the literal codes it returns — and
   # requires each to be in the help, then holds every `t.sh …` the docs mention to the
   # dispatcher. It plants its own defects on every run. What stays here is what it does
