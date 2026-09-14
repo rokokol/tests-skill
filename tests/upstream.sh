@@ -309,7 +309,8 @@ class ClampTest {
 }
 JAVA
   warm nixpkgs#maven nixpkgs#jdk
-  mvn_() { (cd "$d" && nix shell nixpkgs#maven nixpkgs#jdk -c mvn -Dmaven.repo.local="$d/.m2" "$@"); }
+  # GitHub exports JAVA_HOME for its runner JDK; the probe must use the JDK it requested.
+  mvn_() { (cd "$d" && env -u JAVA_HOME nix shell nixpkgs#maven nixpkgs#jdk -c mvn -Dmaven.repo.local="$d/.m2" "$@"); }
 
   run "$work/jvm.healthy" mvn_ test
   check_healthy "$work/jvm.healthy" "$?"
@@ -374,7 +375,8 @@ test("a negative reading becomes zero", () => {
   expect(Math.max(0, -5)).toBe(0);
 });
 JS
-    jest_() { (cd "$d" && HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/jest "$@"); }
+    # Snapshot-writing scenarios exercise Jest's non-CI default regardless of the observer.
+    jest_() { (cd "$d" && env -u CI HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/jest "$@"); }
     vitest_() { (cd "$d" && HOME="$d" nix shell nixpkgs#nodejs -c ./node_modules/.bin/vitest "$@"); }
 
     run "$work/nd.healthy" vitest_ run good
