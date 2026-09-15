@@ -12,6 +12,10 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 - `check-skill.sh` is vendored from the [skill-authoring](https://github.com/rokokol/skill-authoring-skill) skill, where the rules it checks now live, and reports the rules a skill can break without breaking as warnings on stdout, the exit code unchanged: a `Layout` or install section in runtime, `used to`, a `path:line` citation, a link to a sibling skill, a concrete model id, and the rest its `--help` lists
 
+### Fixed
+
+- a log or findings directory `t.sh` creates, `.test-logs/` and `falsify.out/` among them, holds a `.gitignore` of its own, so a `git add -A` no longer picks the logs up in a repository that had not added them to its own `.gitignore`; a directory that already existed is left alone
+
 ## 2026-09-11
 
 ### Changed

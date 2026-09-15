@@ -358,6 +358,20 @@ check_behaviour() {
     >/dev/null 2>&1 || status=$?
   ((status == 0)) || fail "templates/t.conf is not a config t.sh accepts (got $status)"
 
+  echo "== a directory t.sh makes ignores itself, and one it did not make is left alone"
+  # Asked of every repository as a line for its .gitignore, the logs still landed in a
+  # `git add -A` twice in one afternoon; a directory carrying its own .gitignore needs
+  # nobody to remember it. One that was there before is somebody's: `-l .` must not end up
+  # ignoring the repository
+  ign="$work/ignores"
+  git init -q "$ign"
+  (cd "$ign" && tsh run -t 0 -- sh -c 'echo "1 passed"; exit 0') >/dev/null 2>&1 || :
+  [[ -z "$(git -C "$ign" status --porcelain --untracked-files=all)" ]] ||
+    fail "run's own log directory shows up in git status: $(git -C "$ign" status --porcelain --untracked-files=all)"
+  mkdir -p "$ign/mine"
+  (cd "$ign" && tsh run -t 0 -l mine -- sh -c 'echo "1 passed"; exit 0') >/dev/null 2>&1 || :
+  [[ ! -e "$ign/mine/.gitignore" ]] || fail "run wrote a .gitignore into a directory it did not create"
+
   echo "== a marker file checked out with CRLF does not turn every line into a finding"
   # Reported from a Windows runner, where git's autocrlf converts on checkout: a blank line
   # becomes a marker of one carriage return, `grep -F` finds that on every line of a CRLF
@@ -1144,6 +1158,10 @@ DEFECTS
   status=0
   (cd "$fal" && tsh falsify -d tests/in-tests.sh --any-file -l "$work/logs" --out "$work/fo2" -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 83)) || fail "falsify with --any-file did not run the defect in the test file (got $status, want 83)"
+  # Its own findings directory ignores itself, as the logs do
+  (cd "$fal" && tsh falsify -d tests/in-tests.sh --any-file -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || :
+  [[ -z "$(git -C "$fal" status --porcelain --untracked-files=all -- falsify.out)" ]] ||
+    fail "falsify's own falsify.out shows up in git status"
 
   echo "== prove takes the fix out of a commit and requires its tests to go red"
   # A clone, with commits of every shape prove has to tell apart: a test that pins its
@@ -1627,6 +1645,12 @@ check_proofs() {
       drop t.sh 'die "run: -t needs a number'
     plant behaviour twice "named twice printed" "a run that loads a marker set as often as it is named" \
       sed t.sh 's/^        add_marker_file "\$RESOLVED"$/        MARKER_FILES+=("$RESOLVED")/' 'MARKER_FILES+=("$RESOLVED")'
+    # One per half of own_dir: the .gitignore it writes, and the directory it must not write
+    # one into
+    plant behaviour unignored "shows up in git status" "a run whose log directory does not ignore itself" \
+      sed t.sh 's/^  mkdir -p "\$1" \&\& printf .*$/  mkdir -p "$1" # planted/' '# planted'
+    plant behaviour overreach "a directory it did not create" "a run that writes a .gitignore into somebody's directory" \
+      sed t.sh 's/^  \[\[ -d "\$1" \]\] \&\& return 0$/  : # planted/' '# planted'
     plant behaviour unresolved "through the symlink" "a harness that does not resolve its own symlink" \
       sed t.sh 's/^while \[\[ -L "\$self" \]\]; do$/while false; do/' 'while false; do'
     # The write goes to /dev/null rather than being deleted: deleting it leaves RUN_VERDICT

@@ -206,6 +206,15 @@ scan_log() {
   return "$found"
 }
 
+# own_dir DIR -> DIR exists. One this creates is its own and ignores itself: a .gitignore
+# holding * keeps the logs and the findings out of a `git add -A`, which a line asking every
+# repository to add them to its own .gitignore did not. A directory that was already there
+# is somebody's and is left alone, so `-l .` cannot make the repository ignore itself
+own_dir() {
+  [[ -d "$1" ]] && return 0
+  mkdir -p "$1" && printf '*\n' >"$1/.gitignore"
+}
+
 cmd_run() {
   local tail_n=40 saw_ddash="" logdir=""
   MARKER_FILES=("$MARKER_DIR/default.txt")
@@ -275,7 +284,7 @@ cmd_run() {
     [[ -z "$complaint" ]] || die "allow: '$allow' is not a regex grep -E accepts — $complaint"
   fi
 
-  mkdir -p "$logdir" || fatal "run: cannot create $logdir"
+  own_dir "$logdir" || fatal "run: cannot create $logdir"
   local log="${T_LOGFILE:-}"
   [[ -n "$log" ]] || log="$logdir/run-$(date +%Y%m%d-%H%M%S)-$$.log"
   # Refuse before running rather than discover it afterwards: a run whose log could not be
@@ -379,6 +388,7 @@ cmd_flaky() {
 
   local stamp
   stamp="$logdir/flaky-$(date +%Y%m%d-%H%M%S)-$$"
+  own_dir "$logdir" || fatal "flaky: cannot create $logdir"
   mkdir -p "$stamp" || fatal "flaky: cannot create $stamp"
 
   local i status baseline="" differed=0 agreed=0 first_divergence=""
@@ -473,7 +483,7 @@ cmd_bisect_probe() {
   local log="${T_LOGFILE:-}"
   if [[ -z "$log" ]]; then
     local dir="${T_LOGDIR:-.test-logs}"
-    mkdir -p "$dir" || fatal "bisect-probe: cannot create $dir"
+    own_dir "$dir" || fatal "bisect-probe: cannot create $dir"
     log="$dir/probe-$(date +%Y%m%d-%H%M%S)-$$.log"
   fi
 
@@ -1136,7 +1146,8 @@ cmd_falsify() {
   rm -f "$out"/caught.txt "$out"/survived.txt "$out"/stale.txt "$out"/unusable.txt "$out"/timeout.txt \
     "$out"/expected.txt "$out"/results.json "$out"/in-flight
   rm -rf "$out/logs"
-  mkdir -p "$out/logs" || fatal "falsify: cannot create $out"
+  own_dir "$out" || fatal "falsify: cannot create $out"
+  mkdir -p "$out/logs" || fatal "falsify: cannot create $out/logs"
   # Absolute, because the run may move into a worktree and the findings belong here
   out=$(cd -- "$out" && pwd)
   local -a RES_NAME=() RES_FILE=() RES_LINE=() RES_VERDICT=() RES_WHY=()
@@ -1586,7 +1597,7 @@ cmd_prove() {
   POLICY_LOGDIR=""
   load_config
   [[ -n "$logdir" ]] || logdir="${T_LOGDIR:-${POLICY_LOGDIR:-.test-logs}}"
-  mkdir -p "$logdir" || fatal "prove: cannot create $logdir"
+  own_dir "$logdir" || fatal "prove: cannot create $logdir"
   logdir=$(cd -- "$logdir" && pwd)
 
   # In place when the commit is what is checked out and nobody asked otherwise; in a
@@ -1746,6 +1757,7 @@ runs the wrong thing on the day it matters. The flags every subcommand forwards 
 A repository keeps its policy in ./tests/t.conf, read from the current directory only and
 never the command: `markers NAME`, `pattern TEXT`, `allow REGEX`, `logdir PATH`. An unknown
 key, a key with no value or a set that does not exist stops the run and names the line.
+Each log or findings directory the harness creates holds a .gitignore of its own.
 
 The environment:
 
