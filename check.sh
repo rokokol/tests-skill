@@ -141,7 +141,7 @@ check_lint() {
     fail "the flake does not offer a dev shell on x86_64-linux, which is what CI runs the gate on"
 
   echo "== SKILL.md loads, every reference is reachable, every link and anchor resolves"
-  # The skill gate from https://github.com/rokokol/ci-skill, copied verbatim: the frontmatter
+  # The skill gate from https://github.com/rokokol/skill-authoring-skill, vendored: the frontmatter
   # an agent loads the skill by, reachability as a real walk over links from SKILL.md, and every
   # relative link and heading anchor. It falsifies itself on copies of the repository.
   ./check-skill.sh -n "$skill_name" .

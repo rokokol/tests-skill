@@ -10,7 +10,7 @@ One red run is not evidence of instability; it may be a real bug that only your 
 t.sh flaky 20 -m rust -- cargo test --workspace --no-fail-fast
 ```
 
-Two bars, in opposite directions. To call a test unstable, the runs must disagree at least once; a test that failed once and agreed with itself twenty times afterwards was a real failure on a real condition that has since changed, and that is a different investigation. To call it fixed, fifty runs must agree under the conditions that used to break it — the parallelism, the load, the order — because a fix verified by three quiet runs on a quiet laptop is the same guess with a smaller sample
+Two bars, in opposite directions. To call a test unstable, the runs must disagree at least once; a test that failed once and agreed with itself twenty times afterwards was a real failure on a real condition that has since changed, and that is a different investigation. To call it fixed, fifty runs must agree under the conditions that broke it — the parallelism, the load, the order — because a fix verified by three quiet runs on a quiet laptop is the same guess with a smaller sample
 
 If twenty runs agree, the instability is elsewhere: in the CI machine's load, in the order the suite happens to run in, in a neighbouring test's leftovers. Reproduce it there — the same order (`pytest -p randomly --randomly-seed=last`, `go test -shuffle=<seed>`, `vitest --sequence.seed`), a single worker, the same container — rather than concluding the test is fine. And a failure caused by the runner and not the test — a backend that did not come up, a browser that took forty seconds to open a blank page — is classified out before it is counted: a cheap health probe first, and a machine that fails it is a machine, not a flake
 
