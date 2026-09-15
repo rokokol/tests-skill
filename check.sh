@@ -1,21 +1,39 @@
 #!/usr/bin/env bash
-# The gate for this repository. It lints what the skill ships and then proves that each
-# of its checks can actually go red — a check that has never failed is a decoration, and
-# that is the one claim this skill is not allowed to make about itself.
-#
-# Nothing here touches the network, so it is safe on pull requests.
-#
-#   check.sh [lint|behaviour|all]
-#
-# Two halves, because they need different things. `lint` reads what the skill ships —
-# scripts, workflows, docs, markers — and needs actionlint, shellcheck and shfmt from the
-# flake's dev shell, never from whatever the runner has. `behaviour` runs t.sh against
-# throwaway repositories and needs only bash and git, so it can be run under the bash 3.2
-# that macOS ships, which is the one place the harness has broken before. `all` is both.
-#
-#   nix develop -c ./check.sh
-#   /bin/bash ./check.sh behaviour        # on a macOS runner
+# Needs bash 3.2 and POSIX tools only, so behaviour mode runs unchanged under the bash a
+# macOS runner has at /bin/bash — the one place this harness has broken before. A check
+# that has never failed is a decoration, and that is the one claim this skill may not
+# make about itself
 set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+The gate for this repository: lints what the skill ships, then proves that each of its
+checks can actually go red
+
+  check.sh [lint|behaviour|all]
+
+Two halves, because they need different things
+
+  lint        reads what the skill ships — scripts, workflows, docs, markers — with
+              actionlint, shellcheck and shfmt from the flake's dev shell, never from
+              whatever the runner has
+  behaviour   runs t.sh against throwaway repositories; needs only bash and git
+  all         both, and the default
+
+  nix develop -c ./check.sh
+  /bin/bash ./check.sh behaviour        # on a macOS runner
+
+Nothing here touches the network, so it is safe on pull requests.
+Exit 0 clean, 1 with `check: <what>` on the first finding or a usage error
+EOF
+}
+
+case "${1:-}" in
+  -h | --help | help)
+    usage
+    exit 0
+    ;;
+esac
 
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$HERE"

@@ -12,6 +12,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Changed
 
 - `check-skill.sh` is vendored from the [skill-authoring](https://github.com/rokokol/skill-authoring-skill) skill, where the rules it checks now live, and reports the rules a skill can break without breaking as warnings on stdout, the exit code unchanged: a `Layout` or install section in runtime, `used to`, a `path:line` citation, a link to a sibling skill, a concrete model id, and the rest its `--help` lists
+- `t.sh`'s header now keeps only what an editor needs and every `help_*` topic carries everything a caller acts on, restated only where a topic and the general help both needed it; `check.sh`, the gate, answers `--help` too, with its two modes, what each needs and its exit codes
 
 ### Fixed
 
