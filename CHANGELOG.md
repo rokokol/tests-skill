@@ -4,6 +4,10 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ## 2026-09-15
 
+### Added
+
+- `templates/github/workflows/falsify.yml`, a workflow that runs a repository's defect list through `t.sh falsify` on the default branch and by hand, split across a matrix of shards, with `EXAMPLE` markers on the branch, the toolchain, the path of the vendored `t.sh` and the suite command; `references/falsifiability.md` points at it instead of carrying a fragment of it
+
 ### Changed
 
 - `check-skill.sh` is vendored from the [skill-authoring](https://github.com/rokokol/skill-authoring-skill) skill, where the rules it checks now live, and reports the rules a skill can break without breaking as warnings on stdout, the exit code unchanged: a `Layout` or install section in runtime, `used to`, a `path:line` citation, a link to a sibling skill, a concrete model id, and the rest its `--help` lists

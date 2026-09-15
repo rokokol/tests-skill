@@ -128,7 +128,7 @@ SKILL.md              the rules an agent reads, and the checklist before "it wor
 t.sh                  the harness; `t.sh help` lists every subcommand
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, ecosystems/ per language, sources.md for the evidence
-templates/            defects.sh for falsify, t.conf for a repository's own policy
+templates/            defects.sh for falsify, t.conf for a repository's own policy, github/workflows/falsify.yml to run the list in CI
 PITFALLS.md           maintainer traps in this gate and its harness
 check.sh              the self-testing gate, in a lint half and a behaviour half
 check-skill.sh        the skill-authoring skill's gate for a skill repository, vendored

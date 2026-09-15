@@ -112,6 +112,8 @@ check_lint() {
   else
     [[ -d .github/workflows ]] || fail ".github/workflows is missing — nothing gates this repository"
     actionlint
+    # A template is copied into other repositories, where it has to pass the same linter
+    actionlint templates/github/workflows/falsify.yml
   fi
   # This repo follows its own advice about pinning: a job that resolves a tool at run time
   # changes behaviour with zero change in the repository. The guard is check-pins.sh from

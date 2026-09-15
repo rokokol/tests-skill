@@ -44,19 +44,7 @@ The safety properties that make it something you can run on a Friday:
 
 - **`--shard I/N` runs every Nth defect**, so N checkouts cover the whole list between them. A falsification costs one suite run per defect and they are independent, which is what makes the list the thing to split rather than the suite; every Nth rather than a block, because the defects of one file sit together and share a build, so blocks hand one shard all the slow ones. Nothing inside the harness is concurrent — the parallelism is the matrix's, so it scales past one machine and brings none of the flakiness that running a suite against itself does. Each shard prints its own summary and carries its own exit code, so a job fails if any shard does, and each needs its own checkout: two shards in one tree would meet each other's mutants
 
-```yaml
-strategy:
-  matrix:
-    # Only the length of this list matters; job-total below reads it, so the width
-    # is written once and widening the matrix needs no other edit
-    shard: [1, 2, 3, 4]
-steps:
-  - uses: actions/checkout@v7
-  - run: t.sh falsify --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL" -- <the suite>
-    env:
-      SHARD_INDEX: ${{ strategy.job-index }}
-      SHARD_TOTAL: ${{ strategy.job-total }}
-```
+[`templates/github/workflows/falsify.yml`](../templates/github/workflows/falsify.yml) is that matrix as a whole workflow, on the default branch and by hand, with `EXAMPLE` markers on what a repository fills in: its branch, its toolchain, where its copy of `t.sh` sits and the suite command. A repository takes `t.sh` and `markers/` through the ci skill's vendoring cascade, as the header of `t.sh` says
 
 Keep N well under the number of defects. Every shard runs the unbroken suite first, so a run of `D` defects split `N` ways costs `D/N + 1` suite runs against `D + 1`, and the baseline is the part that does not divide: measured at eight defects, two shards took 1.81 times less wall time and four took 3.00, against 1.80 and 3.00 from that arithmetic. A matrix as wide as the list is the pathological case — twenty shards over twenty defects spend half of every job on the baseline and return about twice, not twenty times
 
