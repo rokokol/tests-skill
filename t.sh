@@ -148,6 +148,19 @@ RUN_VERDICT=""
 # falsify's marker of a defect in flight, removed with the restore; global for the traps
 FLIGHT=""
 
+# The worktree falsify or prove made and where they started from, global for the same
+# reason: t.sh returns its verdicts from the function, so an EXIT trap set inside one runs
+# after it has returned, and a worktree known only to a local was left behind
+WORKTREE="" WORKTREE_ROOT=""
+# shellcheck disable=SC2317  # reached through the traps
+cleanup_worktree() {
+  [[ -n "$WORKTREE" ]] || return 0
+  cd -- "$WORKTREE_ROOT" || :
+  git -C "$WORKTREE_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || :
+  rm -rf "$(dirname -- "$WORKTREE")"
+  WORKTREE=""
+}
+
 # Fills MARKER_PATTERNS from MARKER_FILES. Called from the shell that can actually exit.
 MARKER_PATTERNS=()
 load_markers() {
@@ -1278,24 +1291,15 @@ cmd_falsify() {
   # from nothing. Either way a marker names the defect in flight — FALSIFY-IN-PROGRESS at
   # the root of the worktree, in-flight under the findings directory in place — so a
   # mutant that somehow outlives the run is found by the name of what put it there.
-  local root wt=""
-  root=$(pwd)
+  WORKTREE_ROOT=$(pwd)
   if [[ -n "$worktree" ]]; then
-    wt=$(mktemp -d "${TMPDIR:-/tmp}/t.sh.XXXXXX")/wt || fatal "falsify: cannot create a directory for the worktree"
-    git worktree add --detach "$wt" HEAD >/dev/null 2>&1 || fatal "falsify: git could not add a worktree at $wt"
-    cd -- "$wt" || fatal "falsify: cannot enter the worktree at $wt"
-    FLIGHT="$wt/FALSIFY-IN-PROGRESS"
+    WORKTREE=$(mktemp -d "${TMPDIR:-/tmp}/t.sh.XXXXXX")/wt || fatal "falsify: cannot create a directory for the worktree"
+    git worktree add --detach "$WORKTREE" HEAD >/dev/null 2>&1 || fatal "falsify: git could not add a worktree at $WORKTREE"
+    cd -- "$WORKTREE" || fatal "falsify: cannot enter the worktree at $WORKTREE"
+    FLIGHT="$WORKTREE/FALSIFY-IN-PROGRESS"
   else
     FLIGHT="$out/in-flight"
   fi
-  # shellcheck disable=SC2317  # reached through the traps
-  cleanup_worktree() {
-    [[ -n "$wt" ]] || return 0
-    cd -- "$root" || :
-    git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 || :
-    rm -rf "$(dirname -- "$wt")"
-    wt=""
-  }
   for f in "${DEF_FILE[@]}"; do
     [[ " ${files[*]-} " == *" $f "* ]] || files+=("$f")
   done
@@ -1615,21 +1619,12 @@ cmd_prove() {
 
   # In place when the commit is what is checked out and nobody asked otherwise; in a
   # worktree at the commit when it is not, or on request — the same trade as falsify's
-  local root wt=""
-  root=$(pwd)
+  WORKTREE_ROOT=$(pwd)
   if [[ -n "$worktree" || "$commit" != "$(git rev-parse HEAD)" ]]; then
-    wt=$(mktemp -d "${TMPDIR:-/tmp}/t.sh.XXXXXX")/wt || fatal "prove: cannot create a directory for the worktree"
-    git worktree add --detach "$wt" "$commit" >/dev/null 2>&1 || fatal "prove: git could not add a worktree at $wt"
-    cd -- "$wt" || fatal "prove: cannot enter the worktree at $wt"
+    WORKTREE=$(mktemp -d "${TMPDIR:-/tmp}/t.sh.XXXXXX")/wt || fatal "prove: cannot create a directory for the worktree"
+    git worktree add --detach "$WORKTREE" "$commit" >/dev/null 2>&1 || fatal "prove: git could not add a worktree at $WORKTREE"
+    cd -- "$WORKTREE" || fatal "prove: cannot enter the worktree at $WORKTREE"
   fi
-  # shellcheck disable=SC2317  # reached through the traps
-  cleanup_worktree() {
-    [[ -n "$wt" ]] || return 0
-    cd -- "$root" || :
-    git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 || :
-    rm -rf "$(dirname -- "$wt")"
-    wt=""
-  }
 
   # The fix as it is, held in memory for the restore, and as it was before the commit,
   # for the taking away. A file the commit added has no "before" and is removed; a file

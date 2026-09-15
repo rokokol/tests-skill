@@ -1200,6 +1200,17 @@ DEFECTS
   root_out=$(cd "$fal" && T_CONFIG="$work/rootprobe.conf" tsh falsify -d "$work/root-defects.sh" -l "$work/logs" --out "$work/fo4" -- sh suite.sh 2>&1) || status=$?
   { ((status == 64)) && grep -q 'which looks like a test' <<<"$root_out"; } ||
     fail "falsify ran a defect in a file the policy names a test (got $status):"$'\n'"$root_out"
+  # A falsify --worktree that stops before the first defect, on a red baseline, takes its
+  # worktree with it. The traps run once the function has returned, when its locals are gone,
+  # so a worktree known only to a local was left behind with an unbound-variable error
+  status=0
+  wt_out=$(cd "$fal" && T_CONFIG='' tsh falsify --worktree -d "$work/root-defects.sh" -l "$work/logs" --out "$work/fo5" -- sh -c 'exit 1' 2>&1) || status=$?
+  ((status == 85)) || fail "falsify on a red baseline exited $status (want 85):"$'\n'"$wt_out"
+  [[ "$(git -C "$fal" worktree list | wc -l)" -eq 1 ]] ||
+    fail "falsify --worktree left its worktree behind after a red baseline"
+  if grep -q 'unbound variable' <<<"$wt_out"; then
+    fail "falsify tripped over its own variables on the way out:"$'\n'"$wt_out"
+  fi
 
   echo "== prove takes the fix out of a commit and requires its tests to go red"
   # A clone, with commits of every shape prove has to tell apart: a test that pins its
@@ -1281,6 +1292,22 @@ DEFECTS
   status=0
   prove_out=$(cd "$prove_repo" && T_CONFIG="$work/rootcheck.conf" tsh prove -l "$work/logs" -- sh rootcheck.sh 2>&1) || status=$?
   ((status == 0)) || fail "prove exited $status on a fix the policy's tests pin (want proven, 0):"$'\n'"$prove_out"
+  # (g) a commit whose suite is red with its fix in place, proven from a later HEAD: prove
+  # refuses, and the worktree it made for that commit goes with it
+  printf 'third=3\n' >>"$prove_repo/impl.sh"
+  printf 'exit 1\n' >>"$prove_repo/tests/suite.sh"
+  pcommit "a fix whose suite is red"
+  red=$(git -C "$prove_repo" rev-parse HEAD)
+  git -C "$prove_repo" show HEAD~1:tests/suite.sh >"$prove_repo/tests/suite.sh"
+  pcommit "the suite green again"
+  status=0
+  prove_out=$(cd "$prove_repo" && T_CONFIG='' tsh prove "$red" -l "$work/logs" -- sh tests/suite.sh 2>&1) || status=$?
+  ((status == 85)) || fail "prove on a commit whose suite is red exited $status (want 85):"$'\n'"$prove_out"
+  [[ "$(git -C "$prove_repo" worktree list | wc -l)" -eq 1 ]] ||
+    fail "prove left behind the worktree of a commit whose suite is red"
+  if grep -q 'unbound variable' <<<"$prove_out"; then
+    fail "prove tripped over its own variables on the way out:"$'\n'"$prove_out"
+  fi
 
   echo "== the help is complete: every subcommand, every flag, every variable, every exit code"
   # The help is hand-written text and the parsers are code, and the two drift the moment
@@ -1671,7 +1698,7 @@ check_proofs() {
     plant behaviour vacuous "want proven" "a prove that never takes the fix away" \
       sed t.sh 's/^      printf '"'"'%s'"'"' "\${befores\[\$i\]}" >"\${src\[\$i\]}" || fatal "prove: cannot write.*$/      : # planted/' '# planted'
     plant behaviour leftover "left a worktree behind" "a falsify --worktree that does not clean up" \
-      sed t.sh 's/^    git -C "\$root" worktree remove --force "\$wt" >\/dev\/null 2>&1 || :$/    : # planted/' '# planted'
+      sed t.sh 's/^  git -C "\$WORKTREE_ROOT" worktree remove --force "\$WORKTREE" >\/dev\/null 2>&1 || :$/  : # planted/' '# planted'
     plant behaviour unsince "ran nothing and did not say so" "a falsify --since that passes an empty selection in silence" \
       sed t.sh 's/^    printf '"'"'nothing to falsify: .*$/    : # planted/' '# planted'
     # One per half of what sharding claims. A stride of one leaves every shard running the
