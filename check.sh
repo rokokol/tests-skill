@@ -143,8 +143,14 @@ check_lint() {
   echo "== SKILL.md loads, every reference is reachable, every link and anchor resolves"
   # The skill gate from https://github.com/rokokol/skill-authoring-skill, vendored: the frontmatter
   # an agent loads the skill by, reachability as a real walk over links from SKILL.md, and every
-  # relative link and heading anchor. It falsifies itself on copies of the repository.
-  ./check-skill.sh -n "$skill_name" .
+  # relative link and heading anchor. It falsifies itself on copies of the repository, once:
+  # in a nested copy of this gate its own falsification would prove nothing new, the same
+  # file planting the same defects, and it would run again in every copy the proofs make
+  if [[ -n "${T_CHECK_NESTED:-}" ]]; then
+    CHECK_SKILL_NESTED=1 ./check-skill.sh -n "$skill_name" .
+  else
+    ./check-skill.sh -n "$skill_name" .
+  fi
 
   echo "== SKILL.md is still short enough to be read in one sitting"
   # The core is the part an agent loads on every trigger. Every rule that lands in it
