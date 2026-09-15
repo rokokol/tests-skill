@@ -1954,10 +1954,10 @@ t.sh prove [-b BUILD] [--timeout SECONDS] [--worktree] [--any-file] [-l DIR] [-m
 
 Takes the fix out of one commit (default HEAD), keeps its tests, and requires the suite
 to go red: a commit that adds a test and the code it pins has to demonstrate itself. The
-commit's files are split the way falsify splits a defect's file — test files, the policy's
-`tests` among them, stay, the rest is the fix, --any-file counts everything as the fix. The suite must be green with
-the fix in first. A commit other than HEAD is proven in a worktree at that commit;
---worktree does the same for HEAD. -b and --timeout as in falsify
+commit's files are split the way falsify splits a defect's file: test files, the policy's
+`tests` among them, stay and the rest is the fix; --any-file counts everything as the fix.
+The suite must be green with the fix in first. A commit other than HEAD is proven in a
+worktree at that commit; --worktree does the same for HEAD. -b and --timeout as in falsify
 
 Exit: 0 proven; 83 VACUOUS, the tests pass without the fix; 84 the suite did not finish;
 85 the suite red or never really run with the fix in; 88 without the fix nothing builds;
