@@ -7,6 +7,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Added
 
 - `templates/github/workflows/falsify.yml`, a workflow that runs a repository's defect list through `t.sh falsify` on the default branch and by hand, split across a matrix of shards, with `EXAMPLE` markers on the branch, the toolchain, the path of the vendored `t.sh` and the suite command; `references/falsifiability.md` points at it instead of carrying a fragment of it
+- a `tests GLOB` key in `tests/t.conf`, for a repository's own test files beyond the usual shapes, such as a gate kept at the root: `prove` keeps them when it takes a fix away, where it had taken the new tests out with the fix and reported VACUOUS, and `falsify` refuses a defect aimed at one
 
 ### Changed
 

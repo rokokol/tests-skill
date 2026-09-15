@@ -1162,6 +1162,17 @@ DEFECTS
   (cd "$fal" && tsh falsify -d tests/in-tests.sh --any-file -l "$work/logs" -- sh suite.sh) >/dev/null 2>&1 || :
   [[ -z "$(git -C "$fal" status --porcelain --untracked-files=all -- falsify.out)" ]] ||
     fail "falsify's own falsify.out shows up in git status"
+  # A test file outside the usual shapes, which the policy names as one, is refused the same
+  # way. Judged by the message: before the policy knew the key, an unknown key refused with
+  # the same 64, which would pass for this check without the check being made
+  printf 'probe=1\n' >"$fal/rootprobe.sh"
+  git -C "$fal" add rootprobe.sh && git -C "$fal" commit -q -m "a check at the root"
+  printf "defect 'root/edited' 'rootprobe.sh' 'probe=1' 'probe=2' 'nothing'\n" >"$work/root-defects.sh"
+  printf 'tests rootprobe.sh\n' >"$work/rootprobe.conf"
+  status=0
+  root_out=$(cd "$fal" && T_CONFIG="$work/rootprobe.conf" tsh falsify -d "$work/root-defects.sh" -l "$work/logs" --out "$work/fo4" -- sh suite.sh 2>&1) || status=$?
+  { ((status == 64)) && grep -q 'which looks like a test' <<<"$root_out"; } ||
+    fail "falsify ran a defect in a file the policy names a test (got $status):"$'\n'"$root_out"
 
   echo "== prove takes the fix out of a commit and requires its tests to go red"
   # A clone, with commits of every shape prove has to tell apart: a test that pins its
@@ -1226,6 +1237,23 @@ DEFECTS
   status=0
   (cd "$prove_repo" && tsh prove no-such-ref -l "$work/logs" -- sh tests/suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "prove accepted a ref that does not exist (got $status)"
+  # (f) a suite kept at the root, as some repositories keep their gate: without the policy
+  # prove takes it for code and takes its new check away with the fix, and the policy's
+  # `tests` keeps it, so only the fix goes
+  printf '. ./impl.sh\necho "rootcheck ran"\n' >"$prove_repo/rootcheck.sh"
+  pcommit "a suite at the root"
+  # shellcheck disable=SC2016  # the $1 belongs to the fixture's own sh
+  printf 'half() { echo $(( $1 / 2 )); }\n' >>"$prove_repo/impl.sh"
+  # shellcheck disable=SC2016  # the $(...) belongs to the fixture's own sh
+  printf '[ "$(half 8)" = "4" ] || { echo "half is wrong"; exit 1; }\n' >>"$prove_repo/rootcheck.sh"
+  pcommit "half, pinned by the suite at the root"
+  printf 'tests rootcheck.sh\n' >"$work/rootcheck.conf"
+  status=0
+  prove_out=$(cd "$prove_repo" && T_CONFIG='' tsh prove -l "$work/logs" -- sh rootcheck.sh 2>&1) || status=$?
+  ((status == 83)) || fail "prove with no policy exited $status on a root-level suite (want VACUOUS, 83):"$'\n'"$prove_out"
+  status=0
+  prove_out=$(cd "$prove_repo" && T_CONFIG="$work/rootcheck.conf" tsh prove -l "$work/logs" -- sh rootcheck.sh 2>&1) || status=$?
+  ((status == 0)) || fail "prove exited $status on a fix the policy's tests pin (want proven, 0):"$'\n'"$prove_out"
 
   echo "== the help is complete: every subcommand, every flag, every variable, every exit code"
   # The help is hand-written text and the parsers are code, and the two drift the moment
@@ -1651,6 +1679,14 @@ check_proofs() {
       sed t.sh 's/^  mkdir -p "\$1" \&\& printf .*$/  mkdir -p "$1" # planted/' '# planted'
     plant behaviour overreach "a directory it did not create" "a run that writes a .gitignore into somebody's directory" \
       sed t.sh 's/^  \[\[ -d "\$1" \]\] \&\& return 0$/  : # planted/' '# planted'
+    # The policy's tests: the match itself, and the reading of the policy in each of the two
+    # subcommands that split files before any run would have read it
+    plant behaviour policy-tests "the policy names a test" "a test-file check that ignores the policy's tests" \
+      sed t.sh 's/^    \[\[ "\$1" == \$glob \]\] \&\& return 0$/    : # planted/' '# planted'
+    plant behaviour falsify-policy "the policy names a test" "a falsify that checks for test files before reading the policy" \
+      sed t.sh '/^cmd_falsify() {$/,/^}$/s/^    load_config$/    : # planted/' '# planted'
+    plant behaviour prove-policy "on a fix the policy's tests pin" "a prove that splits the commit before reading the policy" \
+      sed t.sh '/^cmd_prove() {$/,/^}$/s/^  load_config$/  : # planted/' '# planted'
     plant behaviour unresolved "through the symlink" "a harness that does not resolve its own symlink" \
       sed t.sh 's/^while \[\[ -L "\$self" \]\]; do$/while false; do/' 'while false; do'
     # The write goes to /dev/null rather than being deleted: deleting it leaves RUN_VERDICT

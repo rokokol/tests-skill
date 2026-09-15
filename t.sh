@@ -98,6 +98,7 @@ read_markers() {
 EXTRA_PATTERNS=()
 POLICY_LOGDIR=""
 POLICY_ALLOW=""
+POLICY_TESTS=()
 load_config() {
   local conf="${T_CONFIG-tests/t.conf}"
   [[ -n "$conf" ]] || return 0
@@ -138,9 +139,10 @@ load_config() {
         POLICY_ALLOW="$value"
         ;;
       logdir) POLICY_LOGDIR="$value" ;;
+      tests) POLICY_TESTS+=("$value") ;;
       # An unknown key is a typo, and a typo that is ignored is a policy silently not in
       # effect — the failure this whole file exists to avoid
-      *) die "config: $conf:$n — unknown key '$key' (markers, pattern, allow, logdir)" ;;
+      *) die "config: $conf:$n — unknown key '$key' (markers, pattern, allow, logdir, tests)" ;;
     esac
   done <"$conf"
 
@@ -221,6 +223,7 @@ cmd_run() {
   EXTRA_PATTERNS=()
   POLICY_LOGDIR=""
   POLICY_ALLOW=""
+  POLICY_TESTS=()
 
   # Policy first, then the flags on top: what you type adds to the repository's own
   # settings rather than silently replacing them
@@ -974,8 +977,14 @@ count_occurrences() {
 # A defect aimed at a test file proves nothing: the test file is executed, so the edit is
 # "caught" by whatever it breaks, and the report reads as coverage the suite does not
 # have. Vendored and generated code is nobody's guard either. The shapes are the usual
-# ones; --any-file is for a list that knows better.
+# ones, and the policy's `tests` adds a repository's own, such as a gate kept at the root;
+# --any-file is for a list that knows better.
 looks_like_test_file() {
+  local glob
+  for glob in ${POLICY_TESTS[@]+"${POLICY_TESTS[@]}"}; do
+    # shellcheck disable=SC2053  # unquoted on purpose: the policy's value is a glob
+    [[ "$1" == $glob ]] && return 0
+  done
   case "$1" in
     tests/* | test/* | spec/* | __tests__/* | */tests/* | */test/* | */spec/* | */__tests__/*) return 0 ;;
     *_test.* | *.test.* | *.spec.* | test_*.py | */test_*.py | *_spec.rb) return 0 ;;
@@ -1206,9 +1215,12 @@ cmd_falsify() {
   local -a files=()
   local f i
   if [[ -z "$any_file" ]]; then
+    # The policy's `tests` decide what a test file is, so it is read before the check
+    POLICY_TESTS=()
+    load_config
     for i in "${!DEF_NAME[@]}"; do
       looks_like_test_file "${DEF_FILE[$i]}" || continue
-      die "falsify: ${DEF_NAME[$i]} edits ${DEF_FILE[$i]}, which looks like a test, vendored or generated file — a defect there proves nothing about the suite (--any-file if the list knows better)"
+      die "falsify: ${DEF_NAME[$i]} edits ${DEF_FILE[$i]}, which looks like a test, vendored or generated file, or one the policy's tests names — a defect there proves nothing about the suite (--any-file if the list knows better)"
     done
   fi
 
@@ -1575,6 +1587,11 @@ cmd_prove() {
     die "prove: the working tree has uncommitted changes — commit or stash them first, so an interrupted restore cannot be mistaken for your own edits"
   fi
 
+  # The policy first: its `tests` decide which of the commit's files are tests
+  POLICY_LOGDIR=""
+  POLICY_TESTS=()
+  load_config
+
   # What the commit changed, split the way falsify splits a defect's file: test files
   # stay, everything else is the fix. A commit that changed no source has nothing to
   # take away; one that changed no test is provable only by tests written before it,
@@ -1594,8 +1611,6 @@ cmd_prove() {
   ((${#tests[@]} > 0)) ||
     echo "t.sh: prove: $ref changes no test file — whatever notices its fix going away was written before it" >&2
 
-  POLICY_LOGDIR=""
-  load_config
   [[ -n "$logdir" ]] || logdir="${T_LOGDIR:-${POLICY_LOGDIR:-.test-logs}}"
   own_dir "$logdir" || fatal "prove: cannot create $logdir"
   logdir=$(cd -- "$logdir" && pwd)
@@ -1755,9 +1770,9 @@ runs the wrong thing on the day it matters. The flags every subcommand forwards 
   -t N         how many lines of the log to show after a verdict that is not a pass (run: 40)
 
 A repository keeps its policy in ./tests/t.conf, read from the current directory only and
-never the command: `markers NAME`, `pattern TEXT`, `allow REGEX`, `logdir PATH`. An unknown
-key, a key with no value or a set that does not exist stops the run and names the line.
-Each log or findings directory the harness creates holds a .gitignore of its own.
+never the command: `markers NAME`, `pattern TEXT`, `allow REGEX`, `logdir PATH`, `tests GLOB`.
+An unknown key, a key with no value or a set that does not exist stops the run and names
+the line. Each log or findings directory the harness creates holds a .gitignore of its own.
 
 The environment:
 
@@ -1919,7 +1934,9 @@ whose name contains it. Nothing is generated, and the defect list is sourced: it
   --worktree          edit a checkout of HEAD in a git worktree instead of the files in
                       front of you, so an editor, a watcher or a commit cannot meet a mutant
   --any-file          allow a defect in a test, vendored or generated file, which is
-                      otherwise refused because it proves nothing about the suite
+                      otherwise refused because it proves nothing about the suite; the
+                      policy's `tests` names a repository's own test files beyond the
+                      usual shapes
 
 Verdicts: caught, SURVIVED with the file, the line and the edit, expected (declared with
 `expect survived REASON`), stale, unusable, TIMEDOUT. On a GitHub runner each finding is
@@ -1942,8 +1959,8 @@ t.sh prove [-b BUILD] [--timeout SECONDS] [--worktree] [--any-file] [-l DIR] [-m
 
 Takes the fix out of one commit (default HEAD), keeps its tests, and requires the suite
 to go red: a commit that adds a test and the code it pins has to demonstrate itself. The
-commit's files are split the way falsify splits a defect's file — test files stay, the
-rest is the fix, --any-file counts everything as the fix. The suite must be green with
+commit's files are split the way falsify splits a defect's file — test files, the policy's
+`tests` among them, stay, the rest is the fix, --any-file counts everything as the fix. The suite must be green with
 the fix in first. A commit other than HEAD is proven in a worktree at that commit;
 --worktree does the same for HEAD. -b and --timeout as in falsify.
 
