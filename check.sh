@@ -444,6 +444,15 @@ check_behaviour() {
       fail "run did not record '$want' beside its log for: $cmd"
   done
 
+  echo "== the command run does not see the harness's own log file"
+  # flaky, prove and bisect-probe hand run its log file through T_LOGFILE, and a suite that
+  # runs t.sh itself, as this gate does, then wrote into the outer run's log and cut it short
+  rm -f "$work/outer.log"
+  # shellcheck disable=SC2016  # the ${...} belongs to the command's own sh
+  T_LOGFILE="$work/outer.log" tsh run -t 0 -l "$work/logs" -- sh -c 'echo "child sees [${T_LOGFILE-unset}]"' >/dev/null 2>&1 || :
+  grep -qxF 'child sees [unset]' "$work/outer.log" ||
+    fail "the command run saw the harness's own T_LOGFILE: $(cat "$work/outer.log")"
+
   echo "== T_ALLOW excuses a marker the repository expects, and nothing else"
   status=0
   T_ALLOW='expected: no tests ran' tsh run -t 0 -l "$work/logs" \
@@ -1693,6 +1702,8 @@ check_proofs() {
       sed t.sh 's/^        add_marker_file "\$RESOLVED"$/        MARKER_FILES+=("$RESOLVED")/' 'MARKER_FILES+=("$RESOLVED")'
     # One per half of own_dir: the .gitignore it writes, and the directory it must not write
     # one into
+    plant behaviour leaky "saw the harness's own T_LOGFILE" "a run that hands its own log file to the command" \
+      sed t.sh 's/^    unset T_LOGFILE$/    : # planted/' '# planted'
     plant behaviour unignored "shows up in git status" "a run whose log directory does not ignore itself" \
       sed t.sh 's/^  mkdir -p "\$1" \&\& printf .*$/  mkdir -p "$1" # planted/' '# planted'
     plant behaviour overreach "a directory it did not create" "a run that writes a .gitignore into somebody's directory" \

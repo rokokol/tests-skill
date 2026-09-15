@@ -289,7 +289,13 @@ cmd_run() {
   # CMD's own status, never the pipeline's. `cmd | tee` reports tee and `cmd | tail`
   # reports tail — both are 0 for a suite that just failed, which is how a red run
   # gets committed as a green one.
-  "$@" 2>&1 | tee "$log"
+  # T_LOGFILE names this run's log, and flaky, prove and bisect-probe set it for the run they
+  # start. Left in the command's environment, a suite that runs t.sh itself wrote into this
+  # very log and cut it short, so the command runs without it
+  (
+    unset T_LOGFILE
+    "$@"
+  ) 2>&1 | tee "$log"
   # Copied whole, in the one command that still can: bash resets PIPESTATUS after every
   # simple command, and an assignment or a `local` is one. A second reference on the next
   # line would already read empty.

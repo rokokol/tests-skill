@@ -17,6 +17,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Fixed
 
 - a log or findings directory `t.sh` creates, `.test-logs/` and `falsify.out/` among them, holds a `.gitignore` of its own, so a `git add -A` no longer picks the logs up in a repository that had not added them to its own `.gitignore`; a directory that already existed is left alone
+- the command `run` starts no longer inherits `T_LOGFILE`, which `flaky`, `prove` and `bisect-probe` set for the run they start: a suite that runs `t.sh` itself, as this repository's gate does, wrote into the outer run's log and cut it short, so `prove` on this repository reported its suite red with the fix in place
 
 ## 2026-09-11
 
