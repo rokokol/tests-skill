@@ -499,16 +499,8 @@ defect 'behaviour/unwritten' 't.sh' \
   expect caught 'could not write'
 
 defect 'behaviour/quadratic-find' 't.sh' \
-  "$(
-    cat <<'EOF'
-        before="${content%%"$find"*}"
-EOF
-  )" \
-  "$(
-    cat <<'EOF'
-        before="${content%"$find${content#*"$find"}"}"
-EOF
-  )" \
+  '  __at=$((__hi - ${#__needle}))' \
+  '  __at=$((${#__haystack} - ${#__needle} - $(__tail="${__haystack#*"$__needle"}"; printf '"'"'%d'"'"' "${#__tail}")))' \
   'every entry spends seconds finding its own text in a large file before the suite is asked anything, and over a whole list that is most of the time a run takes' \
   expect caught 'costs the square of the file'
 

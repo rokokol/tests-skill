@@ -1076,25 +1076,30 @@ slurp() { # slurp VARNAME FILE
   printf -v "$1" '%s' "${__content%x}"
 }
 
-# How many times NEEDLE occurs in HAYSTACK, counted no further than two: every caller asks
-# only whether it occurs exactly once. Anchored rather than scanned: ${h#*"$n"} matches a
-# pattern with a leading * against every prefix in turn and costs the square of the
-# length — 2.9 s on a 104 KB file — while ${h%%"$n"*} tries the needle at each position and
-# drops a position at its first differing character, so it is linear, and what follows the
-# match is taken by index. An empty needle occurs nowhere, or the loop would stand still
-count_occurrences() {
-  local haystack="$1" needle="$2" n=0 before
-  if [[ -z "$needle" ]]; then
-    printf '0'
+# Where NEEDLE occurs in HAYSTACK, for a caller that needs it exactly once: assigns to the
+# variable NAMED by $1 the offset of the one occurrence, -1 when there is none and -2 when
+# there are more. Every removal form grows with the square of the text — ${h#*"$n"} and
+# ${h%%"$n"*} alike, sixteen times the cost for four times the text under bash 3.2 and 5.3
+# both, and 27 s for ${h%%"$n"*} on 495 KB under 3.2 — while containment, a substring and a
+# length are linear. So the offset is found by halving the length of a prefix that still
+# holds the needle: the shortest such prefix ends where the first occurrence ends, and it
+# takes log2 of the length in linear steps. A second occurrence is looked for after the end
+# of the first, so two that overlap count once. An empty needle occurs nowhere
+locate_once() { # locate_once VARNAME HAYSTACK NEEDLE
+  local __haystack="$2" __needle="$3" __lo __hi __mid __at
+  if [[ -z "$__needle" || "$__haystack" != *"$__needle"* ]]; then
+    printf -v "$1" '%s' -1
     return 0
   fi
-  while ((n < 2)); do
-    before="${haystack%%"$needle"*}"
-    [[ "$before" != "$haystack" ]] || break
-    n=$((n + 1))
-    haystack="${haystack:$((${#before} + ${#needle}))}"
+  __lo=$((${#__needle} - 1))
+  __hi=${#__haystack}
+  while ((__hi - __lo > 1)); do
+    __mid=$(((__lo + __hi) / 2))
+    if [[ "${__haystack:0:__mid}" == *"$__needle"* ]]; then __hi=$__mid; else __lo=$__mid; fi
   done
-  printf '%d' "$n"
+  __at=$((__hi - ${#__needle}))
+  if [[ "${__haystack:__hi}" == *"$__needle"* ]]; then __at=-2; fi
+  printf -v "$1" '%s' "$__at"
 }
 
 # A defect aimed at a test file proves nothing: the test file is executed, so the edit is
@@ -1558,7 +1563,7 @@ cmd_falsify() {
     *) fatal "falsify: the baseline run ended without a verdict — the harness could not run the suite (see $logdir)" ;;
   esac
 
-  local name file how exists find replace why expect expect_kind content mutated occurrences pristine line
+  local name file how exists find replace why expect expect_kind content mutated at pristine line
   local more_ok more_rest more_rec more_file more_find more_replace more_content k slot before
   local -a caught=() survived=() stale=() unusable=() timedout=() expected=() ran=() edit_files=() edit_new=()
   for i in "${selected[@]}"; do
@@ -1587,20 +1592,20 @@ cmd_falsify() {
     }
     case "$how" in
       replace)
-        occurrences=$(count_occurrences "$content" "$find")
-        if ((occurrences != 1)); then
+        locate_once at "$content" "$find"
+        if ((at < 0)); then
           # Not guessed at: a list that no longer describes the code has to say so, or it
           # quietly stops testing the thing it was written for
-          if ((occurrences == 0)); then
+          if ((at == -1)); then
             drifted "its find text matches nowhere in $file"
           else
             drifted "its find text matches more than once in $file"
           fi
           continue
         fi
-        # Everything before the one occurrence, found anchored for the reason
-        # count_occurrences gives; the line and the mutant are both cut from it
-        before="${content%%"$find"*}"
+        # Everything before the one occurrence, taken by index at the offset locate_once
+        # found; the line and the mutant are both cut from it
+        before="${content:0:at}"
         # The line the find text starts on, because a survivor is only actionable next to
         # the code it names: how many newlines come before it, plus one
         line=$(($(printf '%s' "$before" | wc -l) + 1))
@@ -1688,9 +1693,9 @@ cmd_falsify() {
       else
         original_of more_content "$more_file"
       fi
-      occurrences=$(count_occurrences "$more_content" "$more_find")
-      if ((occurrences != 1)); then
-        if ((occurrences == 0)); then
+      locate_once at "$more_content" "$more_find"
+      if ((at < 0)); then
+        if ((at == -1)); then
           drifted "one of its --and edits matches nowhere in $more_file"
         else
           drifted "one of its --and edits matches more than once in $more_file"
@@ -1698,8 +1703,7 @@ cmd_falsify() {
         more_ok=""
         break
       fi
-      before="${more_content%%"$more_find"*}"
-      more_content="$before$more_replace${more_content:$((${#before} + ${#more_find}))}"
+      more_content="${more_content:0:at}$more_replace${more_content:$((at + ${#more_find}))}"
       if [[ -n "$slot" ]]; then
         edit_new[slot]="$more_content"
       else

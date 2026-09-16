@@ -1101,10 +1101,10 @@ ANDONE
     fail "falsify did not restore a file both edits of one defect had touched"
 
   echo "== falsify finds an entry's text in time proportional to the file, not to its square"
-  # A pattern with a leading * — ${content#*"$find"} — is matched against every prefix in
-  # turn, which costs the square of the file's length: 2.9 s per operation on a 104 KB t.sh,
-  # twice per entry, before the suite has run at all. The guard sits last, where that shape
-  # is at its worst, and it holds glob characters, so the text has to be found literally as
+  # A removal pattern — ${content#*"$find"} and ${content%%"$find"*} alike — costs the
+  # square of the file's length, under bash 3.2 and 5.3 both: sixteen times the time for
+  # four times the text, 27 s for %% on 495 KB under 3.2. The guard sits last, where that is
+  # at its worst, and it holds glob characters, so the text has to be found literally as
   # well as quickly: read as a pattern, [*?] matches one character and the entry goes stale
   big="$work/big-repo"
   mkdir -p "$big/tests"
