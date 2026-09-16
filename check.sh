@@ -943,6 +943,25 @@ else
   exit 1
 fi
 BOTH
+  # Both halves in one file, which is where edits computed from the same original overwrite
+  # each other: the second write puts the pristine first half back, the suite stays green,
+  # and the entry is reported a survivor. Two files cannot show that — they are written to
+  # different paths — so the pair below is the case that catches it
+  cat >"$fal/pair.sh" <<'PAIR'
+#!/bin/sh
+FIRST=on
+SECOND=on
+PAIR
+  cat >"$fal/pair-suite.sh" <<'PAIRSUITE'
+#!/bin/sh
+. ./pair.sh
+if [ "$FIRST" = on ] || [ "$SECOND" = on ]; then
+  echo "1 passed"
+else
+  echo "both flags gone"
+  exit 1
+fi
+PAIRSUITE
   cat >"$fal/tests/and.sh" <<'AND'
 defect 'both/guards' 'mode.sh' \
   'MODE=safe' 'MODE=unsafe' \
@@ -950,6 +969,13 @@ defect 'both/guards' 'mode.sh' \
   --and 'config.txt' 'limit=10' 'limit=99' \
   expect caught 'both guards gone'
 AND
+  cat >"$fal/tests/and-one-file.sh" <<'ANDONE'
+defect 'pair/both' 'pair.sh' \
+  'FIRST=on' 'FIRST=off' \
+  'both flags that hold the behaviour up are gone at once, and nothing is left to notice' \
+  --and 'pair.sh' 'SECOND=on' 'SECOND=off' \
+  expect caught 'both flags gone'
+ANDONE
   chmod +x "$fal/impl.sh" "$fal/suite.sh" "$fal/both.sh"
   git -C "$fal" init -q -b master
   git -C "$fal" config user.name check
@@ -1062,6 +1088,17 @@ AND
   cmp -s "$fal/config.txt" <(printf 'limit=10\n') ||
     fail "falsify did not restore the second file of a multi-edit defect"
   git -C "$fal" diff --quiet || fail "falsify left the working tree dirty after a defect with several edits"
+
+  # The same claim where both edits land in one file. Computed from the same original and
+  # written one after the other, the second would carry the first's pristine text back with
+  # it, leaving half the defect on disk and the suite green — a survivor that never was
+  status=0
+  and1_out=$(cd "$fal" && tsh falsify -d tests/and-one-file.sh -l "$work/logs" --out "$work/fo-and1" -- sh pair-suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "falsify exited $status on a defect whose two edits land in one file (want 0):"$'\n'"$and1_out"
+  grep -q '^caught    pair/both' <<<"$and1_out" ||
+    fail "falsify lost one of two edits aimed at the same file — the later write put the earlier one back:"$'\n'"$and1_out"
+  cmp -s "$fal/pair.sh" <(printf '#!/bin/sh\nFIRST=on\nSECOND=on\n') ||
+    fail "falsify did not restore a file both edits of one defect had touched"
 
   echo "== --since narrows the list to the files a change touched, and says so when that is nothing"
   # In a clone, so the fixture's history stays what the checks above and below expect
@@ -1878,7 +1915,7 @@ check_proofs() {
     plant_unless_root behaviour nolog "nowhere to put its log" "a run that cannot write its log" \
       drop t.sh ': >"$log" || fatal'
     plant_unless_root behaviour unwritten "could not write" "a falsify that does not check its write" \
-      sed t.sh 's/ || fatal "falsify: cannot write \$file.*$/ # planted/' '# planted'
+      sed t.sh 's/^        fatal "falsify: cannot write \${edit_files\[\$k\]}.*$/        : "planted"/' ': "planted"'
   }
 
   # t.sh travels to repositories that run CI on macOS, which ships bash 3.2, and that is

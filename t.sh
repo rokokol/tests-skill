@@ -1547,7 +1547,7 @@ cmd_falsify() {
   esac
 
   local name file how exists find replace why expect expect_kind content mutated occurrences pristine line
-  local more_ok more_rest more_rec more_file more_find more_replace more_content k
+  local more_ok more_rest more_rec more_file more_find more_replace more_content k slot
   local -a caught=() survived=() stale=() unusable=() timedout=() expected=() ran=() edit_files=() edit_new=()
   for i in "${selected[@]}"; do
     name="${DEF_NAME[$i]}"
@@ -1638,6 +1638,12 @@ cmd_falsify() {
     more_rest="${DEF_MORE[$i]}"
     edit_files=()
     edit_new=()
+    # What each file of this entry becomes, starting from the first edit. An `rm` has no
+    # content to carry forward, so it is applied on its own below
+    if [[ "$how" != rm ]]; then
+      edit_files+=("$file")
+      edit_new+=("$mutated")
+    fi
     while [[ -n "$more_rest" ]]; do
       more_rec="${more_rest%%"$MORE_REC"*}"
       if [[ "$more_rec" == "$more_rest" ]]; then more_rest=""; else more_rest="${more_rest#*"$MORE_REC"}"; fi
@@ -1645,15 +1651,37 @@ cmd_falsify() {
       more_rec="${more_rec#*"$MORE_UNIT"}"
       more_find="${more_rec%%"$MORE_UNIT"*}"
       more_replace="${more_rec#*"$MORE_UNIT"}"
-      original_of more_content "$more_file"
+      # Every edit sees what the ones before it did, and its find text is counted in that
+      # text rather than in the original. Computed from the original instead, two edits to
+      # one file each carry the other's pristine half back, the later write undoes the
+      # earlier, and the suite is measured against half a defect — green, and reported as
+      # a survivor that never existed. It is also what makes an edit whose find text is a
+      # substring of another's readable: once the longer one has been applied, the shorter
+      # one matches in exactly one place
+      slot=""
+      for k in ${edit_files[@]+"${!edit_files[@]}"}; do
+        [[ "${edit_files[$k]}" == "$more_file" ]] || continue
+        slot="$k"
+        break
+      done
+      if [[ -n "$slot" ]]; then
+        more_content="${edit_new[$slot]}"
+      else
+        original_of more_content "$more_file"
+      fi
       occurrences=$(count_occurrences "$more_content" "$more_find")
       if ((occurrences != 1)); then
         drifted "one of its --and edits matches $occurrences times in $more_file, not once"
         more_ok=""
         break
       fi
-      edit_files+=("$more_file")
-      edit_new+=("${more_content%%"$more_find"*}$more_replace${more_content#*"$more_find"}")
+      more_content="${more_content%%"$more_find"*}$more_replace${more_content#*"$more_find"}"
+      if [[ -n "$slot" ]]; then
+        edit_new[$slot]="$more_content"
+      else
+        edit_files+=("$more_file")
+        edit_new+=("$more_content")
+      fi
     done
     [[ -n "$more_ok" ]] || continue
 
@@ -1663,8 +1691,6 @@ cmd_falsify() {
     printf '%s\n' "$name" >"$FLIGHT"
     if [[ "$how" == rm ]]; then
       rm -f "$file" || fatal "falsify: cannot remove $file — the tree is untouched, and nothing was measured"
-    else
-      printf '%s' "$mutated" >"$file" || fatal "falsify: cannot write $file — the tree is untouched, and nothing was measured"
     fi
     for k in ${edit_files[@]+"${!edit_files[@]}"}; do
       printf '%s' "${edit_new[$k]}" >"${edit_files[$k]}" ||
