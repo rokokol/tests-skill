@@ -4,6 +4,10 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ## 2026-09-16
 
+### Changed
+
+- `check.sh` no longer parses every script with its own `bash -n` loop: `check-sh.sh` reports a script it cannot parse, and the gate hands it `t.sh`, `tests/upstream.sh` and itself. The vendored copies are byte-equal to sources that parse them there, which `vendor-sync.sh` and the lock guarantee
+
 ### Added
 
 - `references/falsifiability.md` says how a survivor is closed: by a test written from what the guard promises, never from what the code does now; one that goes red on the unbroken code has found a bug in the code, fixed test first before the entry counts as caught

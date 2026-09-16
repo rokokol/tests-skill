@@ -116,7 +116,10 @@ awk_noise=$(flags_of a "$work/anchor.sh" 2>&1 >/dev/null || :)
 
 check_lint() {
   echo "== the scripts parse and lint"
-  for s in "${scripts[@]}"; do bash -n "$s"; done
+  # No `bash -n` loop: check-sh.sh parses every script it is handed, and it is handed this
+  # repository's own ones below. The vendored copies are byte-equal to sources that parse
+  # them there, which vendor-sync.sh and the lock guarantee, so parsing them again here
+  # would prove nothing about the same bytes
   shellcheck "${scripts[@]}"
   shfmt -d -i 2 -ci "${scripts[@]}"
 
@@ -1330,6 +1333,9 @@ DEFECTS
   # The drift checker runs against the upstream probe as well: it takes flags and answers
   # --help, so its help can fall behind its parser the same way t.sh's can
   "$BASH" ./check-sh.sh -n upstream.sh tests/upstream.sh
+  # The gate itself, for its parse and its bash 3.2 claim: it has no dispatcher and no
+  # flags, so the checker reads it by the proxy alone
+  "$BASH" ./check-sh.sh -n check.sh check.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do
