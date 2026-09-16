@@ -1076,11 +1076,23 @@ slurp() { # slurp VARNAME FILE
   printf -v "$1" '%s' "${__content%x}"
 }
 
+# How many times NEEDLE occurs in HAYSTACK, counted no further than two: every caller asks
+# only whether it occurs exactly once. Anchored rather than scanned: ${h#*"$n"} matches a
+# pattern with a leading * against every prefix in turn and costs the square of the
+# length — 2.9 s on a 104 KB file — while ${h%%"$n"*} tries the needle at each position and
+# drops a position at its first differing character, so it is linear, and what follows the
+# match is taken by index. An empty needle occurs nowhere, or the loop would stand still
 count_occurrences() {
-  local haystack="$1" needle="$2" n=0
-  while [[ "$haystack" == *"$needle"* ]]; do
-    haystack="${haystack#*"$needle"}"
+  local haystack="$1" needle="$2" n=0 before
+  if [[ -z "$needle" ]]; then
+    printf '0'
+    return 0
+  fi
+  while ((n < 2)); do
+    before="${haystack%%"$needle"*}"
+    [[ "$before" != "$haystack" ]] || break
     n=$((n + 1))
+    haystack="${haystack:$((${#before} + ${#needle}))}"
   done
   printf '%d' "$n"
 }
@@ -1547,7 +1559,7 @@ cmd_falsify() {
   esac
 
   local name file how exists find replace why expect expect_kind content mutated occurrences pristine line
-  local more_ok more_rest more_rec more_file more_find more_replace more_content k slot
+  local more_ok more_rest more_rec more_file more_find more_replace more_content k slot before
   local -a caught=() survived=() stale=() unusable=() timedout=() expected=() ran=() edit_files=() edit_new=()
   for i in "${selected[@]}"; do
     name="${DEF_NAME[$i]}"
@@ -1579,17 +1591,24 @@ cmd_falsify() {
         if ((occurrences != 1)); then
           # Not guessed at: a list that no longer describes the code has to say so, or it
           # quietly stops testing the thing it was written for
-          drifted "its find text matches $occurrences times in $file, not once"
+          if ((occurrences == 0)); then
+            drifted "its find text matches nowhere in $file"
+          else
+            drifted "its find text matches more than once in $file"
+          fi
           continue
         fi
+        # Everything before the one occurrence, found anchored for the reason
+        # count_occurrences gives; the line and the mutant are both cut from it
+        before="${content%%"$find"*}"
         # The line the find text starts on, because a survivor is only actionable next to
         # the code it names: how many newlines come before it, plus one
-        line=$(($(printf '%s' "${content%%"$find"*}" | wc -l) + 1))
+        line=$(($(printf '%s' "$before" | wc -l) + 1))
         # Cut around the one occurrence rather than ${content//"$find"/"$replace"}: bash
         # 3.2 keeps the quotes around the replacement as literal text, so every mutant on
         # macOS was `"if false"` and unusable, and unquoted, a `&` in the replacement is
         # the match itself from bash 5.2 on. Prefix and suffix have neither problem.
-        mutated="${content%%"$find"*}$replace${content#*"$find"}"
+        mutated="$before$replace${content:$((${#before} + ${#find}))}"
         ;;
       append)
         if [[ "$content" == *"$replace"* ]]; then
@@ -1671,11 +1690,16 @@ cmd_falsify() {
       fi
       occurrences=$(count_occurrences "$more_content" "$more_find")
       if ((occurrences != 1)); then
-        drifted "one of its --and edits matches $occurrences times in $more_file, not once"
+        if ((occurrences == 0)); then
+          drifted "one of its --and edits matches nowhere in $more_file"
+        else
+          drifted "one of its --and edits matches more than once in $more_file"
+        fi
         more_ok=""
         break
       fi
-      more_content="${more_content%%"$more_find"*}$more_replace${more_content#*"$more_find"}"
+      before="${more_content%%"$more_find"*}"
+      more_content="$before$more_replace${more_content:$((${#before} + ${#more_find}))}"
       if [[ -n "$slot" ]]; then
         edit_new[slot]="$more_content"
       else

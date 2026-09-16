@@ -498,6 +498,20 @@ defect 'behaviour/unwritten' 't.sh' \
   'a read-only file leaves the pristine code in place, the suite passes against it, and a guard the suite does cover is reported as one nobody checks' \
   expect caught 'could not write'
 
+defect 'behaviour/quadratic-find' 't.sh' \
+  "$(
+    cat <<'EOF'
+        before="${content%%"$find"*}"
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+        before="${content%"$find${content#*"$find"}"}"
+EOF
+  )" \
+  'every entry spends seconds finding its own text in a large file before the suite is asked anything, and over a whole list that is most of the time a run takes' \
+  expect caught 'costs the square of the file'
+
 plant 'lint/nofront' 'SKILL.md' write $'no frontmatter here\n' \
   'a skill whose frontmatter is gone installs and never loads, and nothing in the repository says a word about it' \
   expect caught 'does not open with a frontmatter block'

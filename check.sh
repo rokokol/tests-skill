@@ -1100,6 +1100,37 @@ ANDONE
   cmp -s "$fal/pair.sh" <(printf '#!/bin/sh\nFIRST=on\nSECOND=on\n') ||
     fail "falsify did not restore a file both edits of one defect had touched"
 
+  echo "== falsify finds an entry's text in time proportional to the file, not to its square"
+  # A pattern with a leading * — ${content#*"$find"} — is matched against every prefix in
+  # turn, which costs the square of the file's length: 2.9 s per operation on a 104 KB t.sh,
+  # twice per entry, before the suite has run at all. The guard sits last, where that shape
+  # is at its worst, and it holds glob characters, so the text has to be found literally as
+  # well as quickly: read as a pattern, [*?] matches one character and the entry goes stale
+  big="$work/big-repo"
+  mkdir -p "$big/tests"
+  awk 'BEGIN { for (i = 0; i < 8000; i++) printf "filler_%05d=\"a line of ordinary text that only takes up room\"\n", i }' >"$big/big.sh"
+  printf 'guard[*?]=on\n' >>"$big/big.sh"
+  cat >"$big/tests/defects.sh" <<'BIG'
+defect 'big/guard' 'big.sh' \
+  'guard[*?]=on' 'guard[*?]=off' \
+  'the guard at the end of a large file is switched off'
+BIG
+  git -C "$big" init -q -b master
+  git -C "$big" config user.name check
+  git -C "$big" config user.email check@example.invalid
+  git -C "$big" add -A
+  git -C "$big" commit -q -m "a large file with one guard at its end"
+  big_kb=$(($(wc -c <"$big/big.sh") / 1024))
+  status=0
+  big_started=$SECONDS
+  big_out=$(cd "$big" && tsh falsify -l "$work/logs" --out "$work/fo-big" -- sh -c 'grep -qF "guard[*?]=on" big.sh && echo "1 passed"' 2>&1) || status=$?
+  big_elapsed=$((SECONDS - big_started))
+  ((status == 0)) || fail "falsify exited $status on one catchable entry in a ${big_kb} KB file (want 0):"$'\n'"$big_out"
+  grep -q '^caught    big/guard' <<<"$big_out" ||
+    fail "falsify did not find a find text holding glob characters literally:"$'\n'"$big_out"
+  ((big_elapsed < 10)) ||
+    fail "falsify took ${big_elapsed} s over one entry in a ${big_kb} KB file — finding its text costs the square of the file's length"
+
   echo "== --since narrows the list to the files a change touched, and says so when that is nothing"
   # In a clone, so the fixture's history stays what the checks above and below expect
   since_repo="$work/since-repo"
