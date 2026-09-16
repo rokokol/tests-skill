@@ -25,6 +25,22 @@
 # read rather than as a message to interpret.
 set -uo pipefail
 
+usage() {
+  cat <<'EOF'
+upstream.sh — runs the real test runners and checks the marker sets against what they print today
+
+  tests/upstream.sh [--write] [ECOSYSTEM...]
+
+  --write      rewrite the fixtures under tests/fixtures/ so the drift arrives as a diff
+  ECOSYSTEM    limit the run to these ecosystems; with none given, every one of them
+
+This reaches the network: it fetches each runner through nix and installs the node ones
+with npm, so it needs both and takes minutes
+Exit 0 when every marker still matches what the tools print, 1 when one does not, 64 on an
+unknown flag, 70 when the repository root cannot be entered
+EOF
+}
+
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$HERE" || exit 70
 
@@ -33,6 +49,10 @@ wanted=()
 for arg in "$@"; do
   case "$arg" in
     --write) write=1 ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
     -*)
       echo "upstream: no such flag: $arg" >&2
       exit 64

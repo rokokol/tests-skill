@@ -1327,6 +1327,9 @@ DEFECTS
   ref_docs=()
   for f in references/*.md references/ecosystems/*.md; do ref_docs+=(-m "$f"); done
   "$BASH" ./check-sh.sh -n t.sh -e T_ -m SKILL.md -d README.md "${ref_docs[@]}" t.sh
+  # The drift checker runs against the upstream probe as well: it takes flags and answers
+  # --help, so its help can fall behind its parser the same way t.sh's can
+  "$BASH" ./check-sh.sh -n upstream.sh tests/upstream.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do

@@ -10,6 +10,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Fixed
 
+- `tests/upstream.sh` answers `--help` — it took flags and refused `--help` with its own exit 64, so its help lived in the header where no caller reads it and nothing held it to the parser. The help now names its flag, the ecosystems argument, that the run reaches the network through nix and npm, and every code it exits with; the gate holds it to the code with `check-sh.sh`, as it already does for `t.sh`
 - `t.sh bisect` read the first bad commit and the probe's exit code through `sed … | head -1`, where `head` stops reading and the `sed` feeding it dies of SIGPIPE, which `pipefail` turns into the status of a line that found its commit; both now filter with a `sed` that reads to the end. `check.sh` had the same shape in its reference finder — the mechanism is measured in the [bash-best-practices](https://github.com/rokokol/bash-best-practices-skill) skill's `references/pitfalls.md`
 
 ## 2026-09-15
