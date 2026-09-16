@@ -886,7 +886,71 @@ defect 'syntax/broken' 'impl.sh' \
   'clamp() {' 'clamp() {{{' \
   'nothing: this edit only breaks the syntax, which a parser notices and a test does not'
 DEFECTS
-  chmod +x "$fal/impl.sh" "$fal/suite.sh"
+  # The defects a replacement cannot express. A gate's planted defects append a bad line,
+  # create a file that should not be there, rewrite one whole and take one away, and a
+  # find-and-replace reaches none of those: there is nothing unique to find in a file that
+  # does not exist yet. Kept in their own list so the counts the checks above assert stay
+  # what they are.
+  cat >"$fal/tests/forms.sh" <<'FORMS'
+plant 'appended/clamp' 'impl.sh' append \
+  'clamp() { echo "$1"; }
+' \
+  'a later definition of clamp silently replaces the guarded one, and every reading is passed through unclamped'
+plant 'written/whole' 'impl.sh' write \
+  '#!/bin/sh
+clamp() { echo "$1"; }
+strip() { echo "$1" | tr -d " "; }
+' \
+  'the file is replaced whole by one that answers every call without clamping'
+plant 'removed/impl' 'impl.sh' rm \
+  'the file the suite sources is gone, and a suite that sources it without checking reports nothing'
+plant 'created/unread' 'extra.txt' create \
+  'nothing reads this
+' \
+  'a file nobody asked for appears in the tree and no check looks at it'
+FORMS
+  # Each new form's own way of going stale. Without one, a list keeps reporting caught
+  # while the edit it names has quietly stopped being an edit at all: text already in the
+  # file, a file already there, a file already gone.
+  cat >"$fal/tests/forms-stale.sh" <<'STALE'
+plant 'stale/appended' 'impl.sh' append \
+  '#!/bin/sh
+' \
+  'nothing: this entry exists to prove append says so when the text is already in the file'
+plant 'stale/created' 'impl.sh' create \
+  'x
+' \
+  'nothing: this entry exists to prove create says so when the file is already there'
+plant 'stale/removed' 'nosuch.txt' rm \
+  'nothing: this entry exists to prove rm says so when the file is not there'
+STALE
+  # A guard that only fails when two things go at once, which is the shape of defect a
+  # single edit cannot express: with either half still in place the suite stays green, so
+  # a run where the second edit silently did not land looks exactly like a caught defect.
+  cat >"$fal/mode.sh" <<'MODE'
+#!/bin/sh
+MODE=safe
+MODE
+  printf 'limit=10\n' >"$fal/config.txt"
+  cat >"$fal/both.sh" <<'BOTH'
+#!/bin/sh
+. ./mode.sh
+. ./config.txt
+if [ "$MODE" = safe ] || [ "$limit" = 10 ]; then
+  echo "1 passed"
+else
+  echo "both guards gone"
+  exit 1
+fi
+BOTH
+  cat >"$fal/tests/and.sh" <<'AND'
+defect 'both/guards' 'mode.sh' \
+  'MODE=safe' 'MODE=unsafe' \
+  'the safe default and the configured limit are both gone, and nothing is left to hold the value down' \
+  --and 'config.txt' 'limit=10' 'limit=99' \
+  expect caught 'both guards gone'
+AND
+  chmod +x "$fal/impl.sh" "$fal/suite.sh" "$fal/both.sh"
   git -C "$fal" init -q -b master
   git -C "$fal" config user.name check
   git -C "$fal" config user.email check@example.invalid
@@ -948,6 +1012,56 @@ DEFECTS
   status=0
   (cd "$fal" && tsh falsify -l "$work/logs" clamp -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 0)) || fail "falsify exited $status on a list whose only defect is caught (want 0)"
+
+  echo "== a defect the find text cannot express: appended, written whole, created, removed"
+  # The four shapes a gate's planted defects actually take beside a replacement. Each has
+  # to reach a verdict of its own, and the tree has to come back: a created file removed
+  # again, a removed file put back, both byte for byte, or the next run measures a tree
+  # nobody meant to leave behind.
+  status=0
+  forms_out=$(cd "$fal" && tsh falsify -d tests/forms.sh -l "$work/logs" --out "$work/fo-forms" -- sh suite.sh 2>&1) || status=$?
+  ((status == 83)) || fail "falsify exited $status on a list of non-replacement defects with one survivor among them (want 83):"$'\n'"$forms_out"
+  grep -q '^caught    appended/clamp' <<<"$forms_out" ||
+    fail "falsify did not catch a defect appended to the end of the file:"$'\n'"$forms_out"
+  grep -q '^caught    written/whole' <<<"$forms_out" ||
+    fail "falsify did not catch a file rewritten whole:"$'\n'"$forms_out"
+  grep -q '^caught    removed/impl' <<<"$forms_out" ||
+    fail "falsify did not catch the file the suite sources being taken away:"$'\n'"$forms_out"
+  grep -q '^SURVIVED  created/unread' <<<"$forms_out" ||
+    fail "falsify did not report a created file nothing looks at as a survivor:"$'\n'"$forms_out"
+  [[ ! -e "$fal/extra.txt" ]] || fail "falsify left behind the file a create defect made"
+  cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" ||
+    fail "falsify did not put impl.sh back byte for byte after the forms that rewrote and removed it"
+  git -C "$fal" diff --quiet || fail "falsify left the working tree dirty after the non-replacement forms"
+
+  echo "== each new form says when it has stopped being an edit at all"
+  # A replacement goes stale when its find text no longer matches once. The others need
+  # their own answer to the same question, or the list reports caught for an append that
+  # adds what is already there, a create of a file that exists, an rm of one that does not.
+  status=0
+  forms_stale_out=$(cd "$fal" && tsh falsify -d tests/forms-stale.sh -l "$work/logs" --out "$work/fo-forms-stale" -- sh suite.sh 2>&1) || status=$?
+  ((status == 87)) || fail "falsify exited $status on a list whose every non-replacement entry has drifted (want 87):"$'\n'"$forms_stale_out"
+  grep -q '^stale     stale/appended' <<<"$forms_stale_out" ||
+    fail "falsify appended text the file already carries instead of reporting it stale:"$'\n'"$forms_stale_out"
+  grep -q '^stale     stale/created' <<<"$forms_stale_out" ||
+    fail "falsify created a file that is already in the repository instead of reporting it stale:"$'\n'"$forms_stale_out"
+  grep -q '^stale     stale/removed' <<<"$forms_stale_out" ||
+    fail "falsify did not report an rm of a file that is not there as stale:"$'\n'"$forms_stale_out"
+
+  echo "== one defect, several edits: a guard that only fails when both halves go"
+  # Two edits under one name, because they are one logical defect: the harness's own
+  # `blind` plant is exactly this — without pipefail the status read after a pipe is still
+  # right whenever the first command is the one that failed, so planting either half alone
+  # proves nothing. The fixture's suite stays green under either edit by itself, so a run
+  # that applied only the first cannot be mistaken for a catch.
+  status=0
+  and_out=$(cd "$fal" && tsh falsify -d tests/and.sh -l "$work/logs" --out "$work/fo-and" -- sh both.sh 2>&1) || status=$?
+  ((status == 0)) || fail "falsify exited $status on a defect whose two edits are both needed (want 0):"$'\n'"$and_out"
+  grep -q '^caught    both/guards' <<<"$and_out" ||
+    fail "falsify did not apply both edits of one defect — with either alone the suite stays green:"$'\n'"$and_out"
+  cmp -s "$fal/config.txt" <(printf 'limit=10\n') ||
+    fail "falsify did not restore the second file of a multi-edit defect"
+  git -C "$fal" diff --quiet || fail "falsify left the working tree dirty after a defect with several edits"
 
   echo "== --since narrows the list to the files a change touched, and says so when that is nothing"
   # In a clone, so the fixture's history stays what the checks above and below expect
@@ -1728,7 +1842,7 @@ check_proofs() {
     plant behaviour nowhere "where the edit is" "a falsify that names a survivor without its line" \
       drop t.sh '  - %s\n'
     plant behaviour anyfile "aimed at a test file" "a falsify that edits test files" \
-      sed t.sh 's/^      looks_like_test_file "\${DEF_FILE\[\$i\]}" || continue$/      continue # planted/' '# planted'
+      sed t.sh 's/^        looks_like_test_file "\$candidate" || continue$/        continue # planted/' '# planted'
     plant behaviour nodeadline "nothing timed it out" "a falsify with no deadline" \
       sed t.sh 's/^    if \[\[ -n "\$deadline" \]\] \&\& ((waited >= deadline \* 10)); then$/    if false; then # planted/' '# planted'
     plant behaviour surrender "want 89" "a bisect that reports an all-skipped history as resolved" \

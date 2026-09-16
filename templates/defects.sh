@@ -10,6 +10,24 @@
 #   defect NAME FILE FIND REPLACE CONSEQUENCE expect survived REASON
 #   defect NAME FILE FIND REPLACE CONSEQUENCE expect caught FRAGMENT
 #
+# `defect` replaces text. The edits a replacement cannot express — there is nothing unique
+# to find in a file that does not exist yet — are written with the second verb, which takes
+# the same two endings:
+#
+#   plant NAME FILE append TEXT     CONSEQUENCE   add TEXT to the end of FILE
+#   plant NAME FILE create CONTENT  CONSEQUENCE   create FILE, which the repository lacks
+#   plant NAME FILE write  CONTENT  CONSEQUENCE   replace FILE whole
+#   plant NAME FILE rm              CONSEQUENCE   delete FILE
+#
+# Each has its own way of having stopped being an edit, reported `stale` exactly as a find
+# text that no longer matches once: text already in the file, a file already there, content
+# already in place, a file already gone
+#
+# Either verb may end with `--and FILE FIND REPLACE`, any number of times, before its
+# expectation. That is one defect made of several edits, applied together and reported under
+# one name — for a guard whose halves are both needed, where breaking one of them proves
+# nothing because the other still holds the behaviour up
+#
 # NAME         short, groupable — `t.sh falsify escape -- ...` runs every name containing
 #              "escape"
 # FILE         the source file the edit lands in, relative to the repository root. Never a
@@ -83,6 +101,17 @@ defect 'alerts/silent-absence' 'src/alerts.py' \
   '    for name, reason in data.get("unreachable", []):' \
   '    for name, reason in []:' \
   'something that did not answer reads as healthy and quiet'
+
+# The shapes a replacement cannot write down. A configuration file the deployment reads,
+# taken away: nothing in the suite asks what happens when it is not there
+plant 'config/absent' 'config/limits.yml' rm \
+  'with the file gone every limit falls back to its built-in default and the service accepts ten times the load it should'
+
+# A line appended where the last one wins, which is how a real configuration gets broken
+plant 'config/last-wins' 'config/limits.yml' append \
+  'max_in_flight: 100000
+' \
+  'a later key silently overrides the reviewed one and nothing compares the file with what was agreed'
 
 # An edit nothing can observe, declared as such rather than left out of the list: the
 # sort key only orders a report, and no caller depends on the order

@@ -10,6 +10,8 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Added
 
+- an entry of either verb may end with `--and FILE FIND REPLACE`, any number of times, for one defect made of several edits at once: a guard whose halves are both needed reports nothing when only one is broken, which is why the harness's own `blind` plant breaks `pipefail` and the `PIPESTATUS` read together. The edits are applied together and reported under one name, any of them matching other than once is `stale`, and nothing is written for that entry — a second edit that has drifted must not leave the first one on disk
+- a defect list takes a second verb, `plant NAME FILE append|create|write|rm ... CONSEQUENCE`, for the edits a find-and-replace cannot express: a line appended where the last one wins, a file the repository lacks, a file replaced whole, a file taken away. Each reports `stale` its own way — text already in the file, a file already there, content already in place, a file already gone — and a file absent before the run is legal only where every entry naming it is a `create` or an `rm`, so a replacement aimed at a missing file is still refused outright
 - `references/falsifiability.md` says how a survivor is closed: by a test written from what the guard promises, never from what the code does now; one that goes red on the unbroken code has found a bug in the code, fixed test first before the entry counts as caught
 
 ### Fixed

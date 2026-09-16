@@ -38,6 +38,10 @@ The divergence above was first "found" by piping a comparison through `tail -12`
 
 `plant HALF NAME ...` used to be a filter only: the copy was run with the mode of the outer run, so under `all` a row labelled `lint` was equally proven by the behaviour half. The copy now runs the half the row names, which is where most of the gate's time went, and a row carrying the wrong half fails with "the copy did not fail at all" instead of passing on the other half's work
 
+## A restored file is a new file, and a new file has no `+x`
+
+`falsify` puts every file back from memory, which is byte-for-byte for an edit that changed bytes. The `rm` form does not: the restore *creates* the file, and a created file is born under the umask without the executable bit. The byte comparison stays green — it compares content — while `git diff` shows `100755 → 100644` and the next suite meets a source it cannot execute, failing for a reason no defect names. It showed up on the first run of the form: three entries `caught`, and the gate red on "left the working tree dirty", which reads like a restore that lost content. The bit is recorded when the original is taken (`existed` holds `x` rather than `1`) and put back with the file; the whole mode is not, because `stat` spells its format differently on GNU and BSD and the executable bit is the only part of a mode a suite trips over. Anywhere a check restores by rewriting rather than by `git checkout`, ask what else the original carried besides its bytes
+
 ## Shared fixtures were measured and rejected
 
 Rebuilding the same throwaway git repositories in every copy looks like the obvious saving, and it is not one: a timing shim over `git` counted 246 calls totalling 1010 ms in a 9.7 s copy, under 10 percent, and most of those calls are the checks themselves rather than fixture construction
