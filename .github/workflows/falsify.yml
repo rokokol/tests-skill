@@ -1,0 +1,58 @@
+# This repository's own defect list, run through t.sh falsify on the default branch and by
+# hand. Not on pull requests: it costs one suite run per defect — a quarter of an hour for
+# the behaviour half against the gate's one minute — and --since, the filter a pull request
+# would take, is a filter rather than a proof. What a pull request still gets is the gate,
+# which proves the six defects a list cannot hold
+name: falsify
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Two jobs rather than one matrix, because the halves need different things: the
+  # behaviour half runs under any bash with git and nothing else, while the lint half needs
+  # actionlint, shellcheck and shfmt from the flake. One run of falsify also knows one suite
+  # command, which is why the entries are named behaviour/… and lint/… and each job filters
+  # to its own
+  behaviour:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      # Every shard reports: one survivor must not cancel the runs that would find the rest
+      fail-fast: false
+      matrix:
+        # Only the length matters; job-total below reads it, so widening the matrix needs no
+        # other edit. Kept well under the number of defects, because every shard runs the
+        # unbroken suite first and that baseline is the part that does not divide
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      # --worktree is not optional: the file these defects edit is the harness applying the
+      # edit, and bash reads a script as it executes it. T_CHECK_NESTED=1 leaves out the
+      # gate's own planted-defect pass, which would otherwise run inside every mutant
+      - name: one shard of the behaviour half
+        run: ./t.sh falsify --worktree --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL" behaviour/ -- env T_CHECK_NESTED=1 ./check.sh behaviour
+        env:
+          SHARD_INDEX: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: one shard of the lint half
+        run: nix develop --no-write-lock-file -c ./t.sh falsify --worktree --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL" lint/ -- env T_CHECK_NESTED=1 ./check.sh lint
+        env:
+          SHARD_INDEX: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
