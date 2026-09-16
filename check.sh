@@ -1125,8 +1125,12 @@ BIG
   # The limit is enforced rather than read afterwards. Waited out, a removal pattern takes
   # minutes on this file — which is how the entry that plants one timed out in CI instead
   # of being caught, and how a broken gate would spend those minutes before saying so.
-  # t.sh itself is the background process, not a subshell around it, so TERM reaches its
-  # own trap and the run it started goes down with it
+  # KILL rather than TERM: bash runs a trap only between commands, and a removal on this
+  # file is one expansion that lasts a minute, so TERM would wait that minute out — measured
+  # at 111 s for the entry that plants one. KILL cannot be held, and what it leaves
+  # half-edited is the throwaway fixture under $work. t.sh itself is the background
+  # process, not a subshell around it, or the signal would end the subshell and leave t.sh
+  # running
   big_started=$SECONDS
   cd -- "$big"
   "$BASH" "$HERE/t.sh" falsify -l "$work/logs" --out "$work/fo-big" -- sh -c 'grep -qF "guard[*?]=on" big.sh && echo "1 passed"' >"$work/big.out" 2>&1 &
@@ -1134,7 +1138,7 @@ BIG
   cd -- "$HERE"
   while kill -0 "$big_pid" 2>/dev/null && ((SECONDS - big_started < big_limit)); do sleep 1; done
   if kill -0 "$big_pid" 2>/dev/null; then
-    kill -TERM "$big_pid" 2>/dev/null || :
+    kill -KILL "$big_pid" 2>/dev/null || :
     wait "$big_pid" 2>/dev/null || :
     fail "falsify was still over one entry in a ${big_kb} KB file after ${big_limit} s — finding its text costs the square of the file's length"
   fi
