@@ -1121,15 +1121,29 @@ BIG
   git -C "$big" add -A
   git -C "$big" commit -q -m "a large file with one guard at its end"
   big_kb=$(($(wc -c <"$big/big.sh") / 1024))
-  status=0
+  big_limit=10
+  # The limit is enforced rather than read afterwards. Waited out, a removal pattern takes
+  # minutes on this file — which is how the entry that plants one timed out in CI instead
+  # of being caught, and how a broken gate would spend those minutes before saying so.
+  # t.sh itself is the background process, not a subshell around it, so TERM reaches its
+  # own trap and the run it started goes down with it
   big_started=$SECONDS
-  big_out=$(cd "$big" && tsh falsify -l "$work/logs" --out "$work/fo-big" -- sh -c 'grep -qF "guard[*?]=on" big.sh && echo "1 passed"' 2>&1) || status=$?
-  big_elapsed=$((SECONDS - big_started))
+  cd -- "$big"
+  "$BASH" "$HERE/t.sh" falsify -l "$work/logs" --out "$work/fo-big" -- sh -c 'grep -qF "guard[*?]=on" big.sh && echo "1 passed"' >"$work/big.out" 2>&1 &
+  big_pid=$!
+  cd -- "$HERE"
+  while kill -0 "$big_pid" 2>/dev/null && ((SECONDS - big_started < big_limit)); do sleep 1; done
+  if kill -0 "$big_pid" 2>/dev/null; then
+    kill -TERM "$big_pid" 2>/dev/null || :
+    wait "$big_pid" 2>/dev/null || :
+    fail "falsify was still over one entry in a ${big_kb} KB file after ${big_limit} s — finding its text costs the square of the file's length"
+  fi
+  status=0
+  wait "$big_pid" || status=$?
+  big_out=$(cat "$work/big.out")
   ((status == 0)) || fail "falsify exited $status on one catchable entry in a ${big_kb} KB file (want 0):"$'\n'"$big_out"
   grep -q '^caught    big/guard' <<<"$big_out" ||
     fail "falsify did not find a find text holding glob characters literally:"$'\n'"$big_out"
-  ((big_elapsed < 10)) ||
-    fail "falsify took ${big_elapsed} s over one entry in a ${big_kb} KB file — finding its text costs the square of the file's length"
 
   echo "== --since narrows the list to the files a change touched, and says so when that is nothing"
   # In a clone, so the fixture's history stays what the checks above and below expect
