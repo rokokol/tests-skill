@@ -1473,7 +1473,9 @@ ANDONE
   # the code — the dispatcher's subcommands, each
   # parser's flags, the T_ variables the script reads, the literal codes it returns — and
   # requires each to be in the help, then holds every `t.sh …` the docs mention to the
-  # dispatcher. It plants its own defects on every run. What stays here is what it does
+  # dispatcher. It plants its own defects on the first call below and is spared that on the
+  # other two with CHECK_SH_NESTED=1: the copy and the tools it runs with are the same for
+  # all three, so proving it again would prove nothing new. What stays here is what it does
   # not read: the verdict band returned from functions rather than exited, and whether
   # help refuses a topic it does not have. Every reference is held backwards as well, with
   # -m, which asks no list of it: a renamed subcommand cannot leave a ghost in one, and a
@@ -1483,10 +1485,10 @@ ANDONE
   "$BASH" ./check-sh.sh -n t.sh -e T_ -m SKILL.md -d README.md "${ref_docs[@]}" t.sh
   # The drift checker runs against the upstream probe as well: it takes flags and answers
   # --help, so its help can fall behind its parser the same way t.sh's can
-  "$BASH" ./check-sh.sh -n upstream.sh tests/upstream.sh
+  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n upstream.sh tests/upstream.sh
   # The gate itself, for its parse and its bash 3.2 claim: it has no dispatcher and no
   # flags, so the checker reads it by the proxy alone
-  "$BASH" ./check-sh.sh -n check.sh check.sh
+  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n check.sh check.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do

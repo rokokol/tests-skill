@@ -32,7 +32,7 @@ Most planted defects belong in the repository's defect list instead, where a fal
 
 ## Leave a vendored copy alone
 
-A vendored file arrives whole and locked, and it carries its own proofs: the checker that travels proves its own checks on every run, wherever it lands. Do not write a check here against its logic. Such a check tests somebody else's code from the outside, goes stale the next time the copy advances, and has to be written again in every repository holding a copy — while the one place that can maintain it is the source
+A vendored file arrives whole and locked, and its logic is maintained at its source. Do not write a check here against that logic: such a check tests somebody else's code from the outside, goes stale the next time the copy advances, and has to be written again in every repository holding a copy — while the one place that can maintain it is the source
 
 The exception is a seam rather than a copy: where the vendored file's behaviour depends on this repository's own files — the list it is pointed at, the layout it expects, the data it reads — then what is being checked is that seam, and it belongs here, because nowhere else knows about it
 
