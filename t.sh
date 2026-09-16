@@ -890,7 +890,9 @@ cmd_bisect() {
   # "bisect found first bad commit" in one git, "first 'bad' commit" in another, and the
   # term is whatever `git bisect terms` says: the quotes and the word are both optional
   if grep -qE "^bisect found first '?[a-z]*'? commit" "$out"; then
-    culprit=$(sed -n "s/^\([0-9a-f]\{7,40\}\) is the first '\{0,1\}[a-z]*'\{0,1\} commit$/\1/p" "$out" | head -1)
+    # `sed -n 1p` rather than `head -1`: head stops reading, the sed before it dies of
+    # SIGPIPE, and pipefail makes that the status of a line that found its commit
+    culprit=$(sed -n "s/^\([0-9a-f]\{7,40\}\) is the first '\{0,1\}[a-z]*'\{0,1\} commit$/\1/p" "$out" | sed -n 1p)
     printf 't.sh: first bad commit is %s — the session is in %s/bisect.log, replayable with git bisect replay\n' \
       "$culprit" "$logdir"
     return 0
@@ -900,7 +902,7 @@ cmd_bisect() {
       "$logdir" >&2
     return 89
   fi
-  code=$(sed -n 's/^error: bisect run failed: exit code \([0-9]*\) from .*/\1/p' "$out" | head -1)
+  code=$(sed -n 's/^error: bisect run failed: exit code \([0-9]*\) from .*/\1/p' "$out" | sed -n 1p)
   if [[ -n "$code" ]] && ((code >= 128)); then
     # The probe passed a signal through so git would abort; end with the same one
     return "$code"

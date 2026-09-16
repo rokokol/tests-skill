@@ -203,7 +203,10 @@ check_lint() {
   docs=()
   while IFS= read -r f; do docs+=("$f"); done < <(find . -name '*.md' -not -path './.git/*' | sed 's|^\./||' | sort)
   ((${#docs[@]} > 3)) || fail "the markdown finder came back with ${#docs[@]} documents — it is broken, and everything below would go unchecked"
-  printf '%s\n' "${docs[@]}" | grep -q '^references/' ||
+  # <<< rather than a pipe: `grep -q` stops at its match and the printf feeding it would
+  # die of SIGPIPE, which pipefail makes the status of a check that passed
+  doc_rows=$(printf '%s\n' "${docs[@]}")
+  grep -q '^references/' <<<"$doc_rows" ||
     fail "the markdown finder found no reference — it is broken"
   # The other half of the same house style, and the one that drifts silently: a paragraph, a
   # list item — numbered as much as bulleted — and a table cell all end bare. The full stops
