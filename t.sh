@@ -1677,7 +1677,7 @@ cmd_falsify() {
       fi
       more_content="${more_content%%"$more_find"*}$more_replace${more_content#*"$more_find"}"
       if [[ -n "$slot" ]]; then
-        edit_new[$slot]="$more_content"
+        edit_new[slot]="$more_content"
       else
         edit_files+=("$more_file")
         edit_new+=("$more_content")

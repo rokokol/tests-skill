@@ -1664,7 +1664,15 @@ check_proofs() {
   }
 
   run_rows() {
-    ((rows > 0)) || fail "no defect was planted for mode '$mode' — the falsification table is empty"
+    # An empty table is a legal state now rather than a lost one: most of the rows are
+    # entries in tests/defects.sh, and under `behaviour` the only ones left here are the
+    # bash-3.2 pair, which nothing but a macOS runner plants. Said out loud rather than
+    # passed in silence, because a table that ran nothing reads exactly like a table where
+    # everything was caught
+    if ((rows == 0)); then
+      echo "   nothing is planted here for mode '$mode' — its defects are in tests/defects.sh, run by t.sh falsify"
+      return 0
+    fi
     # One job per core. `nproc` is GNU, `sysctl` is the BSD on a macOS runner, and neither is
     # worth failing over: a serial run is slow, not wrong.
     local width
@@ -1721,49 +1729,23 @@ check_proofs() {
       fail "$failures planted defect(s) did not prove what they were written for — their refusals are above"
   }
 
+  # Six rows, where there were seventy-one. The rest are entries in tests/defects.sh now,
+  # run by `t.sh falsify` after a merge rather than by a copy-per-defect on every pull
+  # request. What stays is what a defect list cannot hold: noisy-awk edits check.sh, which
+  # is the suite, and a defect in the suite is "caught" by the suite falling over, which
+  # says nothing about what it checks; dupe, noisy-elsewhere and no-healthy-run edit
+  # fixtures under tests/, which falsify refuses because an edit there is caught by
+  # whatever it breaks, and --any-file would excuse them together with every other entry;
+  # and the bash4 pair is planted only where CHECK_BASH32 says the interpreter is the 3.2 a
+  # macOS runner has, which a list has no way to say.
   # shellcheck disable=SC2016  # every $ below is t.sh's own source text being matched, not an expansion
   {
-    plant lint nofront "does not open with a frontmatter block" "a SKILL.md with no frontmatter" \
-      write SKILL.md $'no frontmatter here\n'
-    plant lint wrapped "hard-wraps a paragraph" "a hard-wrapped paragraph" \
-      append README.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
-    plant lint wrapped-reference "hard-wraps a paragraph" "a hard-wrapped paragraph in a reference" \
-      append references/verdict.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
-    # A document at the root that no list in the gate names: the rule has to find it, and
-    # with the old hand-kept list this copy passed
-    plant lint wrapped-unlisted "hard-wraps a paragraph" "a hard-wrapped paragraph in a document no list names" \
-      append PITFALLS.md $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n'
-    plant lint fullstop "ends a line with a full stop" "a list item that ends with a full stop" \
-      append references/verdict.md $'\n- a list item that ends with a full stop.\n'
-    # The full stop behind closing markup. The rule once read the last character only, and a
-    # bold sentence and a closing parenthesis each kept one in place with the gate green
-    plant lint fullstop-bold "ends a line with a full stop" "a bold paragraph with its full stop inside the markup" \
-      append references/verdict.md $'\n**A bold rule that ends with a full stop.**\n'
-    plant lint fullstop-paren "ends a line with a full stop" "a paragraph with its full stop inside a closing parenthesis" \
-      append references/verdict.md $'\nA remark. (A parenthesis that ends with a full stop.)\n'
-    plant lint bloated "has grown to" "a SKILL.md that grew into a reference" \
-      append SKILL.md "$(printf '\n- one more rule, and another\n%.0s' $(seq 1 40))"
-    plant lint orphan "reaches it" "a reference nothing links to" \
-      write references/nothing-points-here.md ''
-    plant lint deadlink "which does not exist" "a link to a missing file" \
-      append SKILL.md $'\nSee [the missing one](references/not-a-file.md).\n'
-    plant lint deadanchor "where no heading has that anchor" "a link to a nonexistent heading" \
-      append SKILL.md $'\nSee [nowhere](references/verdict.md#no-such-heading).\n'
-    plant behaviour crlf "reddened a healthy CRLF run" "a run that keeps the carriage return in its markers" \
-      drop t.sh "line=\"\${line%\$'\\r'}\""
-    plant lint badflag "which that subcommand does not accept" "a documented flag the parser does not have" \
-      append references/verdict.md $'\n```sh\nt.sh run -b \'cargo build\' -- cargo test\n```\n'
     # The escape goes back into flags_of's own program. Nothing about the answer changes —
     # gawk, mawk, busybox awk, goawk and the one-true-awk macOS ships all read `\ ` as a
     # space — so the only thing to catch is the warning, which is the point: this is the
     # gate proving it reads its own stderr rather than scrolling past it
     plant lint noisy-awk "writes to stderr" "an awk program that warns while the gate stays green" \
       sed check.sh 's/( \*\\| \*/(\\ *\\|\\ */' '(\ *\|\ *'
-    # The one darwin the flake names is swapped for the one nixpkgs dropped, rather than a
-    # line being inserted: `\n` in a replacement is GNU sed, and the BSD sed on a mac is
-    # where this copy would then fail for the sed instead of for the defect
-    plant lint dead-system "cannot be evaluated for" "a flake claiming a system nixpkgs dropped" \
-      sed flake.nix 's/"aarch64-darwin"/"x86_64-darwin"/' '"x86_64-darwin"'
     # Two files each: the duplicate has to be in the set's own lying fixture too, or the
     # copy fails on the dead-entry rule first and the duplicate rule is never reached —
     # which is exactly how this proof once passed without proving anything
@@ -1775,147 +1757,8 @@ check_proofs() {
     plant lint noisy-elsewhere "fires on tests/fixtures/clean/cpp.log" "a default marker that fires on another ecosystem's healthy run" \
       append markers/default.txt $'Total Test time\n' \
       --and append tests/fixtures/lying/default.log $'Total Test time (real) =   0.00 sec\n'
-    plant lint dead "a dead entry guards nothing" "a marker matching nothing" \
-      append markers/default.txt $'a marker matching nothing\n'
-    plant lint noisy "it would redden healthy runs" "a marker that fires on a healthy run" \
-      append markers/default.txt $'test session starts\n'
-    # In the set's lying fixture too, or the copy fails on the dead-entry rule first
-    plant lint noisy-ecosystem "its own healthy run" "an ecosystem marker that fires on its own healthy run" \
-      append markers/rust.txt $'test result: ok.\n'
     plant lint no-healthy-run "has no healthy run at" "a marker set with no healthy run to stay quiet on" \
       rm tests/fixtures/clean/go.log
-    plant lint unproven "has no fixture at" "a marker set with no fixture" \
-      write markers/invented.txt $'no tests ran\n'
-    plant lint unwatched "watched by nobody" "action pins with no dependabot" \
-      rm .github/dependabot.yml
-    plant lint unwatched-actions "does not watch the github-actions" "a dependabot that watches something else" \
-      write .github/dependabot.yml $'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    schedule:\n      interval: weekly\n'
-    # An ignored key is a policy silently not in effect, which is worse than no config at
-    # all: the repository believes markers are loaded that never were
-    plant behaviour lenient "unknown key" "a config that ignores an unknown key" \
-      sed t.sh 's|^      \*) die "config: \$conf:\$n — unknown key.*|      *) : ;;|' '*) : ;;'
-    # `die` in a $(...) exits the subshell, so the caller carries on with an empty string.
-    # Written that way, the empty-marker-set refusal would not refuse — and an empty marker
-    # list makes every run a pass while the check still looks like it is working.
-    plant behaviour subshell "accepted an empty marker set" "a run that never validated its markers" \
-      sed t.sh 's/^  load_markers$/  MARKER_PATTERNS=()/' 'MARKER_PATTERNS=()'
-    # A harness with no pipefail that reads $? after the pipe. Both halves are one defect:
-    # under pipefail alone, $? still happens to be right whenever the FIRST command is the
-    # one that failed, so planting only the $? would prove nothing.
-    plant behaviour blind "for a command that exited 7" "a run reading tee's status" \
-      sed t.sh 's/^set -uo pipefail$/set -u/; s/local -a ps=("${PIPESTATUS\[@\]}")/local -a ps=($?)/' 'local -a ps=($?)'
-    plant behaviour undocumented "its help never mentions 't.sh wat'" "a subcommand missing from the help" \
-      awk t.sh '/^  flaky\) cmd_flaky/ && !done { print "  wat) cmd_run \"$@\" ;;"; done=1 } { print }' 'wat) cmd_run'
-    # Only the help text is touched: the parser keeps --any-file, so the flag is real and
-    # undocumented, which is the drift being caught
-    plant behaviour undocumented-flag "never mentions it" "a flag missing from its subcommand's help" \
-      sed t.sh '/--any-file)$/!s/--any-file/--anyfile/g' '--anyfile'
-    plant behaviour undocumented-variable "never mentions it" "a variable missing from the help" \
-      sed t.sh 's/^  T_LOGFILE    /  T_LOGFLIE    /' 'T_LOGFLIE'
-    plant behaviour undocumented-code "never lists it" "an exit code missing from the help" \
-      sed t.sh 's/^  86  the runs disagreed/  68  the runs disagreed/' '  68  the runs'
-    plant behaviour raw "should be 1 to git bisect" "a probe returning a raw signal status" \
-      sed t.sh 's/^        \*) return 1 ;;$/        *) return "$status" ;; # planted/' '# planted'
-    # Dropping the `printf x` lets command substitution eat the file's last newline, so
-    # every restore leaves the tree dirty by one byte — invisible to a string comparison,
-    # obvious to git
-    plant behaviour trailing "byte for byte" "a falsify that loses the trailing newline" \
-      sed t.sh 's/__content=\$(cat "\$2" \&\& printf x)/__content=$(cat "$2")/' '__content=$(cat "$2")'
-    # Replaced by a no-op that still reads the variable, or the copy fails on shellcheck's
-    # unused-variable warning instead of on the check
-    plant behaviour badallow "grep cannot compile" "a run that applies an allow regex it never checked" \
-      sed t.sh 's/^    \[\[ -z "\$complaint" \]\] || die "allow:.*$/    : "$complaint" # planted/' '# planted'
-    plant behaviour carryon "carried on after an interrupt" "a falsify whose interrupt handler returns" \
-      sed t.sh "s/^  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT \$\$' INT$/  trap 'end_mutant; restore_all' INT/" "trap 'end_mutant; restore_all' INT"
-    # The other half of that trap. `carryon` above proves the re-raise; this proves the
-    # restore, which the check could not prove at all while the interrupt was landing during
-    # the baseline run with nothing yet mutated. Every trap loses restore_all, not just INT:
-    # bash runs the EXIT trap even when the script dies of a signal it re-raised itself, so
-    # stripping INT alone leaves EXIT to put the file back and the copy passes.
-    plant behaviour unrestored "did not put impl.sh back" "a falsify that does not restore the source it was interrupted over" \
-      sed t.sh "/^  trap /s/restore_all; //" "trap 'cleanup_worktree' EXIT"
-    # Both premises, because a search that skips them answers the wrong question with
-    # confidence: a victim already broken would have its first candidate named as the cause
-    plant behaviour unbisected "over a history where every commit passes" "a bisect that takes HEAD being bad on trust" \
-      sed t.sh 's/^  ((head_verdict != 0)) || {$/  ((head_verdict != 999)) || {/' '((head_verdict != 999)) || {'
-    plant behaviour unpremised "on a victim that fails by itself" "a pollute that never checks the victim passes alone" \
-      sed t.sh 's/^  ((st == 0)) || {$/  true || {/' 'true || {'
-    plant behaviour halfblind "exited 0 where two tests" "a pollute that names a single test for a pollution needing two" \
-      sed t.sh 's/^    elif fails_after "\${right\[@\]}"; then$/    elif true; then/' 'elif true; then'
-    plant behaviour unexpired "did not name the row past its expiry" "a quarantine that never calls a deadline passed" \
-      sed t.sh 's/^      if (cell\[ecol\] < today) {$/      if (0) {/' 'if (0) {'
-    plant behaviour undated-ok "can never come up for review" "a quarantine that accepts an expiry which is not a date" \
-      sed t.sh 's/^      if (cell\[ecol\] !~ \/\^\[0-9\]\[0-9\]\[0-9\]\[0-9\]-\[0-9\]\[0-9\]-\[0-9\]\[0-9\]\$\/) {$/      if (0) { # planted/' '# planted'
-    # A scan that reports nothing reads exactly like a clean tree, which is the shape of
-    # guard this harness exists to refuse — so the emptied pattern list has to be fatal
-    plant behaviour blindscan "exited 70 on a tree" "a focus scan with no pattern to scan for" \
-      sed t.sh "s/^  cat <<'FOCUS'\$/  : <<'FOCUS'/" ": <<'FOCUS'"
-    plant behaviour unfocused "exited 0 on a tree" "a focused that finds them and says nothing went wrong" \
-      sed t.sh 's/^  return 80$/  return 0/' 'return 0'
-    # The grep is the whole of `expect caught`: without it every red run is a catch, which
-    # is the claim the clause exists to stop being made
-    plant behaviour miscredited "was still called caught" "a falsify that credits a red run to a guard that did not catch" \
-      sed t.sh 's@^      grep -qF -- "$expect" .*VERDICT=misattributed$@      : # planted@' '# planted'
-    plant behaviour unrecorded ".txt does not name" "a falsify that keeps its findings to the terminal" \
-      sed t.sh 's|^    printf '"'"'%s\\n'"'"' "\$2" >>"\$out/\$list.txt"$|    : "$out/$list.txt" # planted|' '# planted'
-    plant behaviour vacuous "want proven" "a prove that never takes the fix away" \
-      sed t.sh 's/^      printf '"'"'%s'"'"' "\${befores\[\$i\]}" >"\${src\[\$i\]}" || fatal "prove: cannot write.*$/      : # planted/' '# planted'
-    plant behaviour leftover "left a worktree behind" "a falsify --worktree that does not clean up" \
-      sed t.sh 's/^  git -C "\$WORKTREE_ROOT" worktree remove --force "\$WORKTREE" >\/dev\/null 2>&1 || :$/  : # planted/' '# planted'
-    plant behaviour unsince "ran nothing and did not say so" "a falsify --since that passes an empty selection in silence" \
-      sed t.sh 's/^    printf '"'"'nothing to falsify: .*$/    : # planted/' '# planted'
-    # One per half of what sharding claims. A stride of one leaves every shard running the
-    # whole list, which loses nothing and so passes any check that only counts coverage; an
-    # offset one too far drops a defect from every width at once, which no duplicate check
-    # would see. Neither plant can stand in for the other.
-    plant behaviour shard-overlap "in more than one of them" "a shard stride that hands every shard the whole list" \
-      sed t.sh 's/; s += shard_n))/; s += 1))/' 's += 1))'
-    plant behaviour shard-gap "not the whole list" "a shard offset that drops a defect from every width" \
-      sed t.sh 's/for ((s = shard_i - 1;/for ((s = shard_i;/' 'for ((s = shard_i;'
-    plant behaviour unannotated "did not annotate the survivor" "a falsify that keeps its findings out of the diff" \
-      sed t.sh 's/^        annotate error "\$file" "\$line" "SURVIVED \$name: \$why"$/        : # planted/' '# planted'
-    plant behaviour unexpected "was reported as a survivor" "a falsify that ignores a declared exception" \
-      sed t.sh 's/^    if \[\[ "\$expect_kind" == survived \]\]; then$/    if false; then # planted/' '# planted'
-    plant behaviour nowhere "where the edit is" "a falsify that names a survivor without its line" \
-      drop t.sh '  - %s\n'
-    plant behaviour anyfile "aimed at a test file" "a falsify that edits test files" \
-      sed t.sh 's/^        looks_like_test_file "\$candidate" || continue$/        continue # planted/' '# planted'
-    plant behaviour nodeadline "nothing timed it out" "a falsify with no deadline" \
-      sed t.sh 's/^    if \[\[ -n "\$deadline" \]\] \&\& ((waited >= deadline \* 10)); then$/    if false; then # planted/' '# planted'
-    plant behaviour surrender "want 89" "a bisect that reports an all-skipped history as resolved" \
-      sed t.sh 's/^    return 89$/    return 0 # planted/' '# planted'
-    plant behaviour muted "hid run's refusal" "a flaky that mutes the harness's own refusals" \
-      sed t.sh 's|>/dev/null 2>"\$stamp/run-\$i.err"|>/dev/null 2>/dev/null|' '>/dev/null 2>/dev/null'
-    plant behaviour anytail "accepted -t abc" "a run that takes -t on trust" \
-      drop t.sh 'die "run: -t needs a number'
-    plant behaviour twice "named twice printed" "a run that loads a marker set as often as it is named" \
-      sed t.sh 's/^        add_marker_file "\$RESOLVED"$/        MARKER_FILES+=("$RESOLVED")/' 'MARKER_FILES+=("$RESOLVED")'
-    # One per half of own_dir: the .gitignore it writes, and the directory it must not write
-    # one into
-    plant behaviour leaky "saw the harness's own T_LOGFILE" "a run that hands its own log file to the command" \
-      sed t.sh 's/^    unset T_LOGFILE$/    : # planted/' '# planted'
-    plant behaviour unignored "shows up in git status" "a run whose log directory does not ignore itself" \
-      sed t.sh 's/^  mkdir -p "\$1" \&\& printf .*$/  mkdir -p "$1" # planted/' '# planted'
-    plant behaviour overreach "a directory it did not create" "a run that writes a .gitignore into somebody's directory" \
-      sed t.sh 's/^  \[\[ -d "\$1" \]\] \&\& return 0$/  : # planted/' '# planted'
-    # The policy's tests: the match itself, and the reading of the policy in each of the two
-    # subcommands that split files before any run would have read it
-    plant behaviour policy-tests "the policy names a test" "a test-file check that ignores the policy's tests" \
-      sed t.sh 's/^    \[\[ "\$1" == \$glob \]\] \&\& return 0$/    : # planted/' '# planted'
-    plant behaviour falsify-policy "the policy names a test" "a falsify that checks for test files before reading the policy" \
-      sed t.sh '/^cmd_falsify() {$/,/^}$/s/^    load_config$/    : # planted/' '# planted'
-    plant behaviour prove-policy "on a fix the policy's tests pin" "a prove that splits the commit before reading the policy" \
-      sed t.sh '/^cmd_prove() {$/,/^}$/s/^  load_config$/  : # planted/' '# planted'
-    plant behaviour unresolved "through the symlink" "a harness that does not resolve its own symlink" \
-      sed t.sh 's/^while \[\[ -L "\$self" \]\]; do$/while false; do/' 'while false; do'
-    # The write goes to /dev/null rather than being deleted: deleting it leaves RUN_VERDICT
-    # unreferenced, and the copy would then fail on shellcheck instead of on the check
-    plant behaviour nosidecar "did not record" "a run that keeps its verdict to itself" \
-      sed t.sh 's|>"\$log\.verdict"|>/dev/null|' 'printf '"'"'%s\n'"'"' "$RUN_VERDICT" >/dev/null'
-    plant_unless_root behaviour nolog "nowhere to put its log" "a run that cannot write its log" \
-      drop t.sh ': >"$log" || fatal'
-    plant_unless_root behaviour unwritten "could not write" "a falsify that does not check its write" \
-      sed t.sh 's/^        fatal "falsify: cannot write \${edit_files\[\$k\]}.*$/        : "planted"/' ': "planted"'
   }
 
   # t.sh travels to repositories that run CI on macOS, which ships bash 3.2, and that is
@@ -1948,13 +1791,6 @@ check_proofs() {
   # but a floor left behind by rows added since is slack, and slack is how a lost row goes
   # unnoticed. These are the counts with that block skipped, and the rows root cannot prove
   # count as rows here, since each was named and skipped rather than lost.
-  case "$mode" in
-    lint) want_planted=23 ;;
-    behaviour) want_planted=40 ;;
-    all) want_planted=63 ;;
-  esac
-  ((planted + skipped >= want_planted)) ||
-    fail "only $planted defects were planted and $skipped skipped for mode '$mode', not $want_planted — the falsification table has lost rows"
 }
 
 case "$mode" in

@@ -6,6 +6,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Changed
 
+- `check.sh` keeps six planted defects where it kept seventy-one. The rest are entries in this repository's own `tests/defects.sh`, run by `t.sh falsify` after a merge rather than by a copy of the repository per defect on every push, which halves the behaviour half of the gate: 1:16 against 2:42. What stays is what a defect list cannot hold — one defect edits `check.sh`, which is the suite, and a defect in the suite is "caught" by the suite falling over; three edit fixtures under `tests/`, which `falsify` refuses, and `--any-file` would excuse them together with every other entry; and the bash-3.2 pair is planted only where `CHECK_BASH32` says the interpreter is the one a macOS runner has. The `want_planted` floor goes with them: a number kept beside a list is a second record of that list's length, and a row that disappears is visible in the diff without it. An empty table is a legal state now, and says so out loud rather than passing in silence
 - `check.sh` no longer parses every script with its own `bash -n` loop: `check-sh.sh` reports a script it cannot parse, and the gate hands it `t.sh`, `tests/upstream.sh` and itself. The vendored copies are byte-equal to sources that parse them there, which `vendor-sync.sh` and the lock guarantee
 
 ### Added
