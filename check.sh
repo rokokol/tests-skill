@@ -1583,6 +1583,11 @@ BIG
   # The gate itself, for its parse and its bash 3.2 claim: it has no dispatcher and no
   # flags, so the checker reads it by the proxy alone
   CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n check.sh check.sh
+  # The defect lists are sourced by falsify under whatever bash runs t.sh, and a heredoc
+  # inside $( ) reads as other text under 3.2 with no error, so the lists carry the claim
+  # and the proxy holds them to it; on a macOS runner the parse is the real 3.2 one
+  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n defects.sh tests/defects.sh
+  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n defects.sh templates/defects.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do

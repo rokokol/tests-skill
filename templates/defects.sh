@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # The defect list for this repository, read by `t.sh falsify`.
 #
+# Needs bash 3.2, since falsify sources it wherever t.sh runs, macOS included
+#
 # COPYING THIS FILE PROVES NOTHING. The mechanism travels; the knowledge does not. What
 # makes falsification worth running is entirely in the entries below, and they can only be
 # written by someone who knows what this code is supposed to guarantee. A harness that has

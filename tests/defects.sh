@@ -2,6 +2,9 @@
 # The defect list for this repository, read by `t.sh falsify`. Every entry breaks one guard
 # on purpose and requires this repository's own gate to notice it.
 #
+# Needs bash 3.2, since falsify sources it wherever t.sh runs, macOS included; check.sh
+# holds it to that claim through check-sh.sh
+#
 # The names are grouped by the half of the gate that has to do the catching, because one
 # run of falsify knows one suite command and the two halves need different ones:
 #

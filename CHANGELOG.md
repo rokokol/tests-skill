@@ -11,6 +11,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Fixed
 
 - `templates/defects.sh` says how to write a text of several lines or one holding quotes: in single quotes, each `'` inside written `'"'"'`, and never as `"$(cat <<'EOF' ... EOF)"`. bash 3.2, the bash macOS ships, scans a heredoc's body for the end of the substitution, so an unpaired `'` there stops the list from being sourced and an unpaired `)` makes the entry look for a text that is not in the file. This repository's own list was written that way and did not source under 3.2; its 36 such texts are single-quoted now and read the same bytes under bash 3.2 and 5.3
+- `templates/defects.sh` declares `Needs bash 3.2`, since falsify sources a list wherever `t.sh` runs, so `check-sh.sh` run on a list copied from it reports a heredoc inside `$( )` that bash 3.2 would misread. The gate holds this repository's list and the template to that claim
 
 ## 2026-09-16
 
