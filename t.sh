@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # The help is the only list on purpose — this header used to carry a second one, and it
-# fell three subcommands behind the dispatch before anyone noticed. A copy is never edited
-# in place: a fix belongs in rokokol/tests-skill
+# fell three subcommands behind the dispatch before anyone noticed. Taken from
+# rokokol/tests-skill, with markers/ beside it, through the ci skill's vendoring cascade
+# (references/bump-cascade.md in https://github.com/rokokol/ci-skill): a copy is never
+# edited in place, a fix belongs there
 set -uo pipefail
 
 # 64 is EX_USAGE and 70 is EX_SOFTWARE in sysexits(3): the caller asked wrongly, or the
@@ -2090,7 +2092,7 @@ cmd_prove() {
 
 # The reference for whoever runs the harness; the header says only what an editor needs.
 # The gate reads every flag out of every parser, every T_ variable out of this file and
-# every exit code out of every return, and requires each to appear here.
+# every exit code out of every return, and requires each to appear here
 help_general() {
   cat <<'EOF'
 t.sh — the local test harness: one subcommand per question a test run raises
@@ -2128,9 +2130,6 @@ The environment:
   T_LOGDIR     where the logs go; -l overrides it, the policy's `logdir` is under it
   T_LOGFILE    one log file for one run, instead of a name chosen under the log directory
   T_CONFIG     another policy file; T_CONFIG= (empty) reads none
-
-Another repository takes this file and markers/ beside it through the ci skill's
-vendoring cascade (references/bump-cascade.md in https://github.com/rokokol/ci-skill)
 
 Exit status: CMD's own, passed through unchanged, and the harness's own verdicts in a band
 no test runner uses — `t.sh help codes`

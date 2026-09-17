@@ -4,6 +4,11 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ## 2026-09-17
 
+### Fixed
+
+- `t.sh --help` no longer says where the file comes from: the header owns that fact and now names the cascade whole, `markers/` included. `references/falsifiability.md` already pointed at `t.sh`'s header for it, and that pointer is true again rather than naming a place the fact had left
+- the comment block above `help_general` ended its paragraph with a full stop, where the house rule leaves the last line of a paragraph bare
+
 ### Changed
 
 - `falsify` and `prove` end a run when the suite ends. The deadline was watched by asking every tenth of a second whether the suite was still there, which held each run to the next tick and started a `sleep` per tick: 0.06 s wall and 0.03 s CPU per run on a one-second suite, a third of what a defect costs beyond the suite's own time, and a whole tick for a suite that takes milliseconds. A watchdog now sleeps the deadline in a process group of its own while the run waits on the suite, since `wait -n` is bash 4.3; an interrupt ends the watchdog with the suite, so none is left to wake at the deadline and signal a process group that is no longer its own
