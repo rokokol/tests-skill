@@ -59,7 +59,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 # Every t.sh below runs under the bash running this gate, not under whatever bash the
 # shebang finds: on a macOS runner the gate is started as `/bin/bash ./check.sh` to prove
-# the harness on the 3.2 that macOS ships, while `env bash` would find Homebrew's 5.
+# the harness on the 3.2 that macOS ships, while `env bash` finds whichever bash is first
+# on PATH — Homebrew's 5 on a Mac that has one.
 tsh() { "$BASH" "$HERE/t.sh" "$@"; }
 
 # With a template, because the BSD mktemp on macOS wants one
