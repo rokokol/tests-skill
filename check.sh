@@ -329,6 +329,16 @@ check_lint() {
 }
 
 check_behaviour() {
+  # Several checks below send a real INT — to a command bisect-probe runs, to a falsify in
+  # flight — and a gate started as a job with & inherits INT ignored. set -m gives it back
+  # only to a shell that did not inherit the ignore, and POSIX lets no shell below undo
+  # one, so those checks would go red on correct code. The mechanism is asked directly,
+  # and the gate refuses before it spends minutes reaching them
+  int_status=0
+  sh -c 'kill -INT $$' || int_status=$?
+  ((int_status == 130)) ||
+    fail "INT is ignored in this shell (a child sent it exited $int_status) — the gate was started as a job with & or under a parent that ignores INT, and its interrupt checks cannot run there; start it in the foreground"
+
   echo "== run refuses a marker set that would leave it checking nothing"
   status=0
   tsh run -t 0 -l "$work/logs" -m no-such-set -- true >/dev/null 2>&1 || status=$?
