@@ -1556,14 +1556,17 @@ BIG
   # requires each to be in the help, then holds every `t.sh …` the docs mention to the
   # dispatcher. It plants its own defects on the first call below and is spared that on the
   # other two with CHECK_SH_NESTED=1: the copy and the tools it runs with are the same for
-  # all three, so proving it again would prove nothing new. What stays here is what it does
+  # all three, so proving it again would prove nothing new. A nested copy of this gate is
+  # spared it on the first call too: the self-test plants into the checker's own template,
+  # never into this repository, so a copy with a defect planted here would prove again what
+  # the run that made the copy proved, 5 s more each time. What stays here is what it does
   # not read: the verdict band returned from functions rather than exited, and whether
   # help refuses a topic it does not have. Every reference is held backwards as well, with
   # -m, which asks no list of it: a renamed subcommand cannot leave a ghost in one, and a
   # reference added later is covered by the glob rather than by a list kept here
   ref_docs=()
   for f in references/*.md references/ecosystems/*.md; do ref_docs+=(-m "$f"); done
-  "$BASH" ./check-sh.sh -n t.sh -e T_ -m SKILL.md -d README.md "${ref_docs[@]}" t.sh
+  CHECK_SH_NESTED=${T_CHECK_NESTED:-} "$BASH" ./check-sh.sh -n t.sh -e T_ -m SKILL.md -d README.md "${ref_docs[@]}" t.sh
   # The drift checker runs against the upstream probe as well: it takes flags and answers
   # --help, so its help can fall behind its parser the same way t.sh's can
   CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n upstream.sh tests/upstream.sh
