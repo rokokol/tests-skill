@@ -28,28 +28,16 @@
 # say "only where the bash is old".
 
 defect 'behaviour/crlf' 't.sh' \
-  "$(
-    cat <<'EOF'
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-EOF
-  )" \
+  '  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'"'"'\r'"'"'}"' \
   '  while IFS= read -r line || [[ -n "$line" ]]; do' \
   'a repository whose marker files carry Windows line endings has every healthy run reported as a failure, and the team learns to disbelieve the verdict' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-    # CRLF would otherwise carry a carriage return into every value
-    line="${line%$'\r'}"
-EOF
-  )" '    # CRLF would otherwise carry a carriage return into every value' \
+  --and 't.sh' '    # CRLF would otherwise carry a carriage return into every value
+    line="${line%$'"'"'\r'"'"'}"' '    # CRLF would otherwise carry a carriage return into every value' \
   expect caught 'reddened a healthy CRLF run'
 
 defect 'behaviour/lenient' 't.sh' \
-  "$(
-    cat <<'EOF'
-      *) die "config: $conf:$n — unknown key '$key' (markers, pattern, allow, logdir, tests)" ;;
-EOF
-  )" \
+  '      *) die "config: $conf:$n — unknown key '"'"'$key'"'"' (markers, pattern, allow, logdir, tests)" ;;' \
   '      *) : ;;' \
   'a typo in tests/t.conf silently switches off the policy it names, and every run afterwards believes in markers that were never loaded' \
   expect caught 'unknown key'
@@ -64,38 +52,18 @@ defect 'behaviour/blind' 't.sh' \
   'set -uo pipefail' \
   'set -u' \
   'a suite that exited 7 is reported as a pass, because the status acted on belongs to the pipe and not to the command' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-  # line would already read empty.
-  local -a ps=("${PIPESTATUS[@]}")
-EOF
-  )" "$(
-    cat <<'EOF'
-  # line would already read empty.
-  local -a ps=($?)
-EOF
-  )" \
-  --and 't.sh' "$(
-    cat <<'EOF'
-  T_LOGDIR="$logdir" git bisect run "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" 2>&1 | tee "$out"
-  local -a ps=("${PIPESTATUS[@]}")
-EOF
-  )" "$(
-    cat <<'EOF'
-  T_LOGDIR="$logdir" git bisect run "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" 2>&1 | tee "$out"
-  local -a ps=($?)
-EOF
-  )" \
+  --and 't.sh' '  # line would already read empty.
+  local -a ps=("${PIPESTATUS[@]}")' '  # line would already read empty.
+  local -a ps=($?)' \
+  --and 't.sh' '  T_LOGDIR="$logdir" git bisect run "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" 2>&1 | tee "$out"
+  local -a ps=("${PIPESTATUS[@]}")' '  T_LOGDIR="$logdir" git bisect run "$SELF" bisect-probe "${pass[@]+"${pass[@]}"}" "$@" 2>&1 | tee "$out"
+  local -a ps=($?)' \
   expect caught 'for a command that exited 7'
 
 defect 'behaviour/undocumented' 't.sh' \
   '  run) cmd_run "$@" ;;' \
-  "$(
-    cat <<'EOF'
-  run) cmd_run "$@" ;;
-  wat) cmd_run "$@" ;;
-EOF
-  )" \
+  '  run) cmd_run "$@" ;;
+  wat) cmd_run "$@" ;;' \
   'a subcommand nobody can find: the help is the only reference anyone reads, and what it leaves out does not exist for whoever runs the tool' \
   expect caught "its help never mentions 't.sh wat'"
 
@@ -104,15 +72,7 @@ defect 'behaviour/undocumented-flag' 't.sh' \
   'cmd_focused() { # focused [--anyfile] [PATH...]' \
   'a flag the parser accepts and the help never names, so the only way to learn it is reading the source' \
   --and 't.sh' '# --any-file is for a list that knows better.' '# --anyfile is for a list that knows better.' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-        die "falsify: ${DEF_NAME[$i]} edits $candidate, which looks like a test, vendored or generated file, or one the policy's tests names — a defect there proves nothing about the suite (--any-file if the list knows better)"
-EOF
-  )" "$(
-    cat <<'EOF'
-        die "falsify: ${DEF_NAME[$i]} edits $candidate, which looks like a test, vendored or generated file, or one the policy's tests names — a defect there proves nothing about the suite (--anyfile if the list knows better)"
-EOF
-  )" \
+  --and 't.sh' '        die "falsify: ${DEF_NAME[$i]} edits $candidate, which looks like a test, vendored or generated file, or one the policy'"'"'s tests names — a defect there proves nothing about the suite (--any-file if the list knows better)"' '        die "falsify: ${DEF_NAME[$i]} edits $candidate, which looks like a test, vendored or generated file, or one the policy'"'"'s tests names — a defect there proves nothing about the suite (--anyfile if the list knows better)"' \
   --and 't.sh' '    die "prove: $ref changes no source file, only ${#tests[@]} test file(s) — there is no fix to take away (--any-file counts every file)"' '    die "prove: $ref changes no source file, only ${#tests[@]} test file(s) — there is no fix to take away (--anyfile counts every file)"' \
   --and 't.sh' '  t.sh focused [--any-file] [PATH...]  is a `.only` left in the source, so most of the suite is skipped' '  t.sh focused [--anyfile] [PATH...]  is a `.only` left in the source, so most of the suite is skipped' \
   --and 't.sh' 't.sh focused [--any-file] [PATH...]' 't.sh focused [--anyfile] [PATH...]' \
@@ -148,79 +108,43 @@ defect 'behaviour/trailing' 't.sh' \
   expect caught 'byte for byte'
 
 defect 'behaviour/badallow' 't.sh' \
-  "$(
-    cat <<'EOF'
-    [[ -z "$complaint" ]] || die "allow: '$allow' is not a regex grep -E accepts — $complaint"
-EOF
-  )" \
+  '    [[ -z "$complaint" ]] || die "allow: '"'"'$allow'"'"' is not a regex grep -E accepts — $complaint"' \
   '    : "$complaint" # planted' \
   'an allow pattern grep cannot compile excuses nothing at all, and the lines it was written for redden every run afterwards' \
   expect caught 'grep cannot compile'
 
 defect 'behaviour/carryon' 't.sh' \
-  "$(
-    cat <<'EOF'
-  # terminal does not reach, so the group is ended first
-  trap 'restore_all; cleanup_worktree' EXIT
-  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$' INT
-EOF
-  )" \
-  "$(
-    cat <<'EOF'
-  # terminal does not reach, so the group is ended first
-  trap 'restore_all; cleanup_worktree' EXIT
-  trap 'end_mutant; restore_all' INT
-EOF
-  )" \
+  '  # terminal does not reach, so the group is ended first
+  trap '"'"'restore_all; cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$'"'"' INT' \
+  '  # terminal does not reach, so the group is ended first
+  trap '"'"'restore_all; cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; restore_all'"'"' INT' \
   'Ctrl-C leaves the run going: the interrupted defect drops out of the report while still counted in the summary, which then claims more than was measured' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-  }
-  trap 'restore_all; cleanup_worktree' EXIT
-  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$' INT
-EOF
-  )" "$(
-    cat <<'EOF'
-  }
-  trap 'restore_all; cleanup_worktree' EXIT
-  trap 'end_mutant; restore_all' INT
-EOF
-  )" \
+  --and 't.sh' '  }
+  trap '"'"'restore_all; cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$'"'"' INT' '  }
+  trap '"'"'restore_all; cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; restore_all'"'"' INT' \
   expect caught 'carried on after an interrupt'
 
 defect 'behaviour/unrestored' 't.sh' \
-  "$(
-    cat <<'EOF'
-  # terminal does not reach, so the group is ended first
-  trap 'restore_all; cleanup_worktree' EXIT
-  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$' INT
-  trap 'end_mutant; restore_all; cleanup_worktree; trap - TERM; kill -TERM $$' TERM
-EOF
-  )" \
-  "$(
-    cat <<'EOF'
-  # terminal does not reach, so the group is ended first
-  trap 'cleanup_worktree' EXIT
-  trap 'end_mutant; cleanup_worktree; trap - INT; kill -INT $$' INT
-  trap 'end_mutant; cleanup_worktree; trap - TERM; kill -TERM $$' TERM
-EOF
-  )" \
+  '  # terminal does not reach, so the group is ended first
+  trap '"'"'restore_all; cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$'"'"' INT
+  trap '"'"'end_mutant; restore_all; cleanup_worktree; trap - TERM; kill -TERM $$'"'"' TERM' \
+  '  # terminal does not reach, so the group is ended first
+  trap '"'"'cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; cleanup_worktree; trap - INT; kill -INT $$'"'"' INT
+  trap '"'"'end_mutant; cleanup_worktree; trap - TERM; kill -TERM $$'"'"' TERM' \
   'an interrupted run leaves a mutant on disk, and every suite after it measures code nobody wrote' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-  }
-  trap 'restore_all; cleanup_worktree' EXIT
-  trap 'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$' INT
-  trap 'end_mutant; restore_all; cleanup_worktree; trap - TERM; kill -TERM $$' TERM
-EOF
-  )" "$(
-    cat <<'EOF'
-  }
-  trap 'cleanup_worktree' EXIT
-  trap 'end_mutant; cleanup_worktree; trap - INT; kill -INT $$' INT
-  trap 'end_mutant; cleanup_worktree; trap - TERM; kill -TERM $$' TERM
-EOF
-  )" \
+  --and 't.sh' '  }
+  trap '"'"'restore_all; cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; restore_all; cleanup_worktree; trap - INT; kill -INT $$'"'"' INT
+  trap '"'"'end_mutant; restore_all; cleanup_worktree; trap - TERM; kill -TERM $$'"'"' TERM' '  }
+  trap '"'"'cleanup_worktree'"'"' EXIT
+  trap '"'"'end_mutant; cleanup_worktree; trap - INT; kill -INT $$'"'"' INT
+  trap '"'"'end_mutant; cleanup_worktree; trap - TERM; kill -TERM $$'"'"' TERM' \
   expect caught 'did not put impl.sh back'
 
 defect 'behaviour/unbisected' 't.sh' \
@@ -254,16 +178,8 @@ defect 'behaviour/undated-ok' 't.sh' \
   expect caught 'can never come up for review'
 
 defect 'behaviour/blindscan' 't.sh' \
-  "$(
-    cat <<'EOF'
-  cat <<'FOCUS'
-EOF
-  )" \
-  "$(
-    cat <<'EOF'
-  : <<'FOCUS'
-EOF
-  )" \
+  '  cat <<'"'"'FOCUS'"'"'' \
+  '  : <<'"'"'FOCUS'"'"'' \
   'focused reports a clean tree because it searched for nothing, and a file running one of its tests passes as a full suite' \
   expect caught 'exited 70 on a tree'
 
@@ -280,21 +196,13 @@ defect 'behaviour/miscredited' 't.sh' \
   expect caught 'was still called caught'
 
 defect 'behaviour/unrecorded' 't.sh' \
-  "$(
-    cat <<'EOF'
-    printf '%s\n' "$2" >>"$out/$list.txt"
-EOF
-  )" \
+  '    printf '"'"'%s\n'"'"' "$2" >>"$out/$list.txt"' \
   '    : "$out/$list.txt" # planted' \
   'CI has nothing to diff or grep, so a survivor that appeared between two runs goes unnoticed' \
   expect caught '.txt does not name'
 
 defect 'behaviour/vacuous' 't.sh' \
-  "$(
-    cat <<'EOF'
-      printf '%s' "${befores[$i]}" >"${src[$i]}" || fatal "prove: cannot write ${src[$i]} — nothing was measured"
-EOF
-  )" \
+  '      printf '"'"'%s'"'"' "${befores[$i]}" >"${src[$i]}" || fatal "prove: cannot write ${src[$i]} — nothing was measured"' \
   '      : # planted' \
   'a commit whose tests pin nothing is reported proven, and the one discipline this command exists for stops meaning anything' \
   expect caught 'want proven'
@@ -306,11 +214,7 @@ defect 'behaviour/leftover' 't.sh' \
   expect caught 'left a worktree behind'
 
 defect 'behaviour/unsince' 't.sh' \
-  "$(
-    cat <<'EOF'
-    printf 'nothing to falsify: no defect names a file changed since %s — this is a filter, not a proof; run the full list on the default branch\n' "$since"
-EOF
-  )" \
+  '    printf '"'"'nothing to falsify: no defect names a file changed since %s — this is a filter, not a proof; run the full list on the default branch\n'"'"' "$since"' \
   '    : # planted' \
   'a pull request reports a green falsification that ran no defect at all' \
   expect caught 'ran nothing and did not say so'
@@ -340,18 +244,10 @@ defect 'behaviour/unexpected' 't.sh' \
   expect caught 'was reported as a survivor'
 
 defect 'behaviour/nowhere' 't.sh' \
-  "$(
-    cat <<'EOF'
-            printf '          %s:%s  - %s\n' "$file" "$line" "${find%%$'\n'*}"
-EOF
-  )" \
+  '            printf '"'"'          %s:%s  - %s\n'"'"' "$file" "$line" "${find%%$'"'"'\n'"'"'*}"' \
   '' \
   'a finding names the file but not the place, so closing it begins with a search through the file' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-      printf '  - %s\n' "${src[$i]}"
-EOF
-  )" '' \
+  --and 't.sh' '      printf '"'"'  - %s\n'"'"' "${src[$i]}"' '' \
   expect caught 'where the edit is'
 
 defect 'behaviour/anyfile' 't.sh' \
@@ -394,38 +290,18 @@ defect 'behaviour/anytail' 't.sh' \
   '        (($# >= 2)) || die "run: -t needs a number"' \
   '' \
   'a typo in -t makes the harness read a number it never got, and the tail of the log comes out silently empty' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-        [[ "$tail_n" =~ ^[0-9]+$ ]] || die "run: -t needs a number of lines, got '$tail_n'"
-EOF
-  )" '' \
+  --and 't.sh' '        [[ "$tail_n" =~ ^[0-9]+$ ]] || die "run: -t needs a number of lines, got '"'"'$tail_n'"'"'"' '' \
   expect caught 'accepted -t abc'
 
 defect 'behaviour/twice' 't.sh' \
-  "$(
-    cat <<'EOF'
-        resolve_markers "$value"
-        add_marker_file "$RESOLVED"
-EOF
-  )" \
-  "$(
-    cat <<'EOF'
-        resolve_markers "$value"
-        MARKER_FILES+=("$RESOLVED")
-EOF
-  )" \
+  '        resolve_markers "$value"
+        add_marker_file "$RESOLVED"' \
+  '        resolve_markers "$value"
+        MARKER_FILES+=("$RESOLVED")' \
   'a marker set named twice matches twice, and one lying line in a log is reported as two separate ones' \
-  --and 't.sh' "$(
-    cat <<'EOF'
-        resolve_markers "$2"
-        add_marker_file "$RESOLVED"
-EOF
-  )" "$(
-    cat <<'EOF'
-        resolve_markers "$2"
-        MARKER_FILES+=("$RESOLVED")
-EOF
-  )" \
+  --and 't.sh' '        resolve_markers "$2"
+        add_marker_file "$RESOLVED"' '        resolve_markers "$2"
+        MARKER_FILES+=("$RESOLVED")' \
   expect caught 'named twice printed'
 
 defect 'behaviour/leaky' 't.sh' \
@@ -435,11 +311,7 @@ defect 'behaviour/leaky' 't.sh' \
   expect caught "saw the harness's own T_LOGFILE"
 
 defect 'behaviour/unignored' 't.sh' \
-  "$(
-    cat <<'EOF'
-  mkdir -p "$1" && printf '*\n' >"$1/.gitignore"
-EOF
-  )" \
+  '  mkdir -p "$1" && printf '"'"'*\n'"'"' >"$1/.gitignore"' \
   '  mkdir -p "$1" # planted' \
   "git add -A picks the logs up, and they land in somebody's commit" \
   expect caught 'shows up in git status'
@@ -463,18 +335,10 @@ defect 'behaviour/falsify-policy' 't.sh' \
   expect caught 'the policy names a test'
 
 defect 'behaviour/prove-policy' 't.sh' \
-  "$(
-    cat <<'EOF'
-  POLICY_TESTS=()
-  load_config
-EOF
-  )" \
-  "$(
-    cat <<'EOF'
-  POLICY_TESTS=()
-  : # planted
-EOF
-  )" \
+  '  POLICY_TESTS=()
+  load_config' \
+  '  POLICY_TESTS=()
+  : # planted' \
   'prove splits a commit before it knows which files the policy calls tests, so a real fix is reported VACUOUS while its tests were removed along with it' \
   expect caught "on a fix the policy's tests pin"
 
@@ -485,16 +349,8 @@ defect 'behaviour/unresolved' 't.sh' \
   expect caught 'through the symlink'
 
 defect 'behaviour/nosidecar' 't.sh' \
-  "$(
-    cat <<'EOF'
-  printf '%s\n' "$RUN_VERDICT" >"$log.verdict"
-EOF
-  )" \
-  "$(
-    cat <<'EOF'
-  printf '%s\n' "$RUN_VERDICT" >/dev/null
-EOF
-  )" \
+  '  printf '"'"'%s\n'"'"' "$RUN_VERDICT" >"$log.verdict"' \
+  '  printf '"'"'%s\n'"'"' "$RUN_VERDICT" >/dev/null' \
   'the kind of verdict is lost, so a refusal and a genuine failure are the same number to whoever reads the result' \
   expect caught 'did not record'
 

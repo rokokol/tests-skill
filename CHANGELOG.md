@@ -8,6 +8,10 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 - `falsify` and `prove` end a run when the suite ends. The deadline was watched by asking every tenth of a second whether the suite was still there, which held each run to the next tick and started a `sleep` per tick: 0.06 s wall and 0.03 s CPU per run on a one-second suite, a third of what a defect costs beyond the suite's own time, and a whole tick for a suite that takes milliseconds. A watchdog now sleeps the deadline in a process group of its own while the run waits on the suite, since `wait -n` is bash 4.3; an interrupt ends the watchdog with the suite, so none is left to wake at the deadline and signal a process group that is no longer its own
 
+### Fixed
+
+- `templates/defects.sh` says how to write a text of several lines or one holding quotes: in single quotes, each `'` inside written `'"'"'`, and never as `"$(cat <<'EOF' ... EOF)"`. bash 3.2, the bash macOS ships, scans a heredoc's body for the end of the substitution, so an unpaired `'` there stops the list from being sourced and an unpaired `)` makes the entry look for a text that is not in the file. This repository's own list was written that way and did not source under 3.2; its 36 such texts are single-quoted now and read the same bytes under bash 3.2 and 5.3
+
 ## 2026-09-16
 
 ### Changed

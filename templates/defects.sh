@@ -28,6 +28,14 @@
 # one name — for a guard whose halves are both needed, where breaking one of them proves
 # nothing because the other still holds the behaviour up
 #
+# A text of several lines, or one holding quotes, goes in single quotes with its newlines
+# as they are and each ' inside written '"'"' — never as "$(cat <<'EOF' ... EOF)". The
+# parser of bash 3.2, the bash macOS ships, looks for the closing parenthesis inside the
+# heredoc's body: an unpaired ' there fails the whole list, and an unpaired ) ends the
+# substitution early, so the entry quietly looks for a text that is not in the file. A list
+# that goes through shellcheck says once, above its first entry, `# shellcheck
+# disable=SC2016 # every $ in a single-quoted text here is text to find, never an expansion`
+#
 # NAME         short, groupable — `t.sh falsify escape -- ...` runs every name containing
 #              "escape"
 # FILE         the source file the edit lands in, relative to the repository root. Never a
