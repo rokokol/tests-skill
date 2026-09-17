@@ -2,6 +2,12 @@
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
+## 2026-09-18
+
+### Added
+
+- `references/verdict.md`: a check whose clean result is silence has to say what it examined, because "nothing wrong" and "nothing examined" produce the same empty output at exit 0 and no log reading separates them. Either count what was examined and print the count, or refuse when there was nothing to examine; a check that can only be silent gets a known-positive in the same invocation
+
 ## 2026-09-17
 
 ### Fixed
