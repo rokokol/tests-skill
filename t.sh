@@ -4,6 +4,9 @@
 # rokokol/tests-skill, with markers/ beside it, through the ci skill's vendoring cascade
 # (references/bump-cascade.md in https://github.com/rokokol/ci-skill): a copy is never
 # edited in place, a fix belongs there
+#
+# No -e: CMD's non-zero status is the answer this harness exists to report, not a failure
+# of the harness, so every run of it is captured with `|| status=$?` and passed through
 set -uo pipefail
 
 # 64 is EX_USAGE and 70 is EX_SOFTWARE in sysexits(3): the caller asked wrongly, or the

@@ -23,6 +23,9 @@
 #
 # --write rewrites the fixtures under tests/fixtures/ so the drift arrives as a diff to
 # read rather than as a message to interpret.
+#
+# No -e: every finding is counted into problems and printed, and the run exits 1 on the
+# counter at the end rather than at the first non-zero grep
 set -uo pipefail
 
 usage() {
