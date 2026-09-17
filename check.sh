@@ -1275,8 +1275,12 @@ BIG
   # ignored signal cannot be trapped, and this check would find nothing to interrupt
   flight="$fal/falsify.out/in-flight"
   rm -f "$flight"
+  # The deadline names the watchdog's sleep, so the check after the interrupt can look for
+  # it, and carries this gate's PID, so a gate running beside this one on the same machine
+  # never finds the other's
+  orphan_deadline=$((100000 + $$))
   set -m
-  (cd "$fal" && exec "$BASH" "$HERE/t.sh" falsify -l "$work/logs" -- sh slow.sh) >"$work/interrupted.out" 2>&1 &
+  (cd "$fal" && exec "$BASH" "$HERE/t.sh" falsify --timeout "$orphan_deadline" -l "$work/logs" -- sh slow.sh) >"$work/interrupted.out" 2>&1 &
   falsify_pid=$!
   set +m
   # The interrupt has to land while a mutant is on disk, or "the source was put back" is a
@@ -1301,6 +1305,16 @@ BIG
     fail "falsify never put a mutant on disk — the interrupt below would have had nothing to land on"
   [[ -s "$flight" ]] ||
     fail "a mutant is on disk and falsify did not name the defect in flight"
+  # And for the watchdog, which is started after the mutant is written: an interrupt that
+  # lands between the two leaves no watchdog to orphan, and the check for one below passed
+  # against a trap that never ended it. pgrep -fx is in procps, BSD and busybox alike
+  waited=0
+  while ! pgrep -fx "sleep $orphan_deadline" >/dev/null && kill -0 "$falsify_pid" 2>/dev/null && ((waited < 400)); do
+    sleep 0.05
+    waited=$((waited + 1))
+  done
+  pgrep -fx "sleep $orphan_deadline" >/dev/null ||
+    fail "falsify ran a mutant with no watchdog asleep beside it — the interrupt below would have had none to end"
   kill -INT "$falsify_pid"
   status=0
   wait "$falsify_pid" || status=$?
@@ -1308,6 +1322,24 @@ BIG
   ! grep -q 'defect(s)' "$work/interrupted.out" || fail "an interrupted falsify still printed its summary"
   cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" || fail "an interrupted falsify did not put impl.sh back"
   git -C "$fal" diff --quiet || fail "an interrupted falsify left the working tree dirty"
+  # The watchdog is a process group of its own, which the interrupt does not reach. Left
+  # behind, it wakes at the deadline and sends TERM to a process group id that by then may
+  # belong to something else. A second, because a killed process leaves the table a moment
+  # after the signal rather than at it
+  orphan_waited=0
+  while pgrep -fx "sleep $orphan_deadline" >/dev/null && ((orphan_waited < 20)); do
+    sleep 0.1
+    orphan_waited=$((orphan_waited + 1))
+  done
+  if pgrep -fx "sleep $orphan_deadline" >/dev/null; then
+    # Ended here before failing, or it outlives the gate and does what it is failed for.
+    # The watchdog shell first, which a fork leaves with t.sh's arguments, so it never
+    # reaches its TERM; then its sleep. The pattern is in no argument of this gate's own,
+    # or pkill -f would end the gate with it
+    pkill -KILL -f "falsify --timeout $orphan_deadline " || :
+    pkill -KILL -fx "sleep $orphan_deadline" || :
+    fail "an interrupted falsify left its watchdog asleep, to wake at the deadline and signal a process group that is no longer its own"
+  fi
 
   echo "== a mutant that could not be written is not a survivor"
   # A write that fails leaves the pristine code in place; the suite passes against it, and

@@ -2,6 +2,12 @@
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
+## 2026-09-17
+
+### Changed
+
+- `falsify` and `prove` end a run when the suite ends. The deadline was watched by asking every tenth of a second whether the suite was still there, which held each run to the next tick and started a `sleep` per tick: 0.06 s wall and 0.03 s CPU per run on a one-second suite, a third of what a defect costs beyond the suite's own time, and a whole tick for a suite that takes milliseconds. A watchdog now sleeps the deadline in a process group of its own while the run waits on the suite, since `wait -n` is bash 4.3; an interrupt ends the watchdog with the suite, so none is left to wake at the deadline and signal a process group that is no longer its own
+
 ## 2026-09-16
 
 ### Changed

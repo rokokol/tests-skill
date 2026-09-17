@@ -361,10 +361,22 @@ defect 'behaviour/anyfile' 't.sh' \
   expect caught 'aimed at a test file'
 
 defect 'behaviour/nodeadline' 't.sh' \
-  '    if [[ -n "$deadline" ]] && ((waited >= deadline * 10)); then' \
-  '    if false; then # planted' \
+  '  if [[ -n "$deadline" ]]; then' \
+  '  if false; then # planted' \
   'a mutant that loops forever hangs the run until a CI timeout kills it with no name attached to the failure' \
   expect caught 'nothing timed it out'
+
+defect 'behaviour/watchdogheld' 't.sh' \
+  '    [[ -e "$log.timedout" ]] || kill -KILL -- -"$WATCHDOG_PGID" 2>/dev/null || :' \
+  '    : # planted' \
+  'the run waits on a watchdog nobody ended, which wakes at the deadline and reports every defect timed out, the caught ones included' \
+  expect caught 'exited 84 where a defect went unnoticed'
+
+defect 'behaviour/watchdogorphan' 't.sh' \
+  '  [[ -z "$WATCHDOG_PGID" ]] || kill -KILL -- -"$WATCHDOG_PGID" 2>/dev/null || :' \
+  '  : # planted' \
+  'an interrupted run leaves its watchdog asleep, to wake at the deadline and signal whatever process group has that id by then' \
+  expect caught 'left its watchdog asleep'
 
 defect 'behaviour/surrender' 't.sh' \
   '    return 89' \
