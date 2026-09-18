@@ -6,6 +6,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Added
 
+- the dev shell carries `jq`, ahead of the checker that will need it: the vendored `check-sh.sh` is moving off its awk lexer to reading the script it is given as a tree, out of `shfmt --to-json`, with jq flattening that tree into the rows its rules read. It lands before the cascade delivers that checker, so a new copy does not arrive to a missing tool and a red verify
 - `references/verdict.md`: a check whose clean result is silence has to say what it examined, because "nothing wrong" and "nothing examined" produce the same empty output at exit 0 and no log reading separates them. Either count what was examined and print the count, or refuse when there was nothing to examine; a check that can only be silent gets a known-positive in the same invocation
 
 ## 2026-09-17

@@ -32,6 +32,10 @@
             # proof that the gate catches such an escape would pass on a Linux runner and
             # fail on a contributor's mac for the awk, not for the defect
             gawk
+            # The vendored check-sh.sh is moving to reading a script as a tree, out of
+            # `shfmt --to-json`, with jq flattening that tree into rows. It arrives before
+            # the checker that needs it, so the cascade does not deliver a red run
+            jq
             shellcheck
             shfmt
           ];
