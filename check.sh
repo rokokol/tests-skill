@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Needs bash 3.2 and POSIX tools only, so behaviour mode runs unchanged under the bash a
-# macOS runner has at /bin/bash — the one place this harness has broken before. A check
+# Needs bash 3.2, so behaviour mode runs unchanged under the bash a macOS runner has at
+# /bin/bash — the one place this harness has broken before. A check
 # that has never failed is a decoration, and that is the one claim this skill may not
 # make about itself
 set -euo pipefail
