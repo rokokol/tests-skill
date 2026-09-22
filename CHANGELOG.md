@@ -2,6 +2,12 @@
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
+## 2026-09-23
+
+### Changed
+
+- the heredoc in `check.sh` that writes the `mode.sh` fixture is delimited by `MODE_FILE` rather than `MODE`, because tree-sitter's bash grammar ends a heredoc at any body line that opens with the delimiter word, and this body opens with `MODE=safe`. The fixture it writes is byte for byte what it was; the gate now parses as a tree
+
 ## 2026-09-22
 
 ### Added

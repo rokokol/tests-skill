@@ -908,10 +908,12 @@ STALE
   # A guard that only fails when two things go at once, which is the shape of defect a
   # single edit cannot express: with either half still in place the suite stays green, so
   # a run where the second edit silently did not land looks exactly like a caught defect.
-  cat >"$fal/mode.sh" <<'MODE'
+  # The delimiter is not MODE: tree-sitter ends a heredoc at any body line that opens with
+  # the delimiter word, and the body below opens with MODE
+  cat >"$fal/mode.sh" <<'MODE_FILE'
 #!/bin/sh
 MODE=safe
-MODE
+MODE_FILE
   printf 'limit=10\n' >"$fal/config.txt"
   cat >"$fal/both.sh" <<'BOTH'
 #!/bin/sh
