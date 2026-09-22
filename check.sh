@@ -40,7 +40,7 @@ cd "$HERE"
 
 # One source of truth for what gets linted. A second copy of this list drifts, and a
 # drifted list lies about what was checked.
-scripts=(t.sh check.sh check-sh.sh check-skill.sh check-pins.sh vendor-sync.sh templates/defects.sh tests/upstream.sh)
+scripts=(t.sh check.sh check-sh.sh check-skill.sh check-pins.sh check-prose.sh vendor-sync.sh templates/defects.sh tests/upstream.sh)
 
 # The skill's own name, as the frontmatter, the readme and the symlink all spell it
 skill_name=tests
@@ -184,23 +184,16 @@ check_lint() {
   ((skill_lines <= 90)) ||
     fail "SKILL.md has grown to $skill_lines lines — the core is meant to be read in one sitting; move the detail into references/"
 
-  echo "== no paragraph in any document is hard-wrapped"
+  echo "== every document keeps the house rules a script can decide"
   # GitHub soft-wraps, so a manual break inside a paragraph only means a one-word edit
-  # reflows every line after it. The rule from https://github.com/rokokol/create-readme-skill,
-  # applied to every document here: a reference is read by an agent and by a person on GitHub alike,
-  # and the diff of a one-word edit should be one line in either.
-  hard_wrapped() { # hard_wrapped FILE -> prints the offending line numbers
-    awk '
-    # the frontmatter is one key per line by definition, not prose
-    NR == 1 && /^---$/ { front = 1; next }
-    front { if (/^---$/) front = 0; next }
-    /^```/ { fence = !fence; prev = 0; next }
-    fence { next }
-    # blank, heading, table, list, quote, html, badge, link or indented line: not prose
-    /^[[:space:]]*$/ || /^[#|>< ]/ || /^[-*+]/ || /^[0-9]+\. / || /^!\[/ || /^\[/ { prev = 0; next }
-    { if (prev) print NR; prev = 1 }
-  ' "$1"
-  }
+  # reflows every line after it. That rule and the rest of the house style — a bare
+  # paragraph end, the admonition keyword alone on its line, a plain quotation mark, no
+  # heading for something that has its own file — live in
+  # https://github.com/rokokol/create-readme-skill, and check-prose.sh below is its
+  # checker, vendored rather than restated. Two of the rules used to be copied into this
+  # gate as awk, and five repositories held that copy in two spellings that had drifted.
+  # Over every document here, not the readme alone: a reference is read by an agent and by
+  # a person on GitHub alike, and the diff of a one-word edit should be one line in either
   # Found rather than listed. A hand-kept list is a second place to remember a document
   # exists, and the one added at the root simply escaped the rule while the gate stayed
   # green — which is the same shape as the marker sets that had no fixture.
@@ -212,30 +205,7 @@ check_lint() {
   doc_rows=$(printf '%s\n' "${docs[@]}")
   grep -q '^references/' <<<"$doc_rows" ||
     fail "the markdown finder found no reference — it is broken"
-  # The other half of the same house style, and the one that drifts silently: a paragraph, a
-  # list item — numbered as much as bulleted — and a table cell all end bare. The full stops
-  # inside a paragraph stay; only the one holding the door shut goes.
-  ends_bare() { # ends_bare FILE -> prints the line numbers that end in a full stop
-    awk '
-    NR == 1 && /^---$/ { front = 1; next }
-    front { if (/^---$/) front = 0; next }
-    /^```/ { fence = !fence; next }
-    fence { next }
-    # an indented line is a code block, not prose
-    /^    / || /^\t/ { next }
-    # a full stop the line ends on, and not an ellipsis — seen through the markup that can
-    # close after it, since `.**` and `.)` hold the door shut as firmly as a bare `.`
-    { s = $0; sub(/[*_)"]+$/, "", s); if (s ~ /[^.]\.$/) print NR }
-  ' "$1"
-  }
-  for doc in "${docs[@]}"; do
-    wrapped=$(hard_wrapped "$doc")
-    [[ -z "$wrapped" ]] ||
-      fail "$doc hard-wraps a paragraph at line(s): $(tr '\n' ' ' <<<"$wrapped")— one paragraph is one line"
-    stopped=$(ends_bare "$doc")
-    [[ -z "$stopped" ]] ||
-      fail "$doc ends a line with a full stop at line(s): $(tr '\n' ' ' <<<"$stopped")— a paragraph, a list item and a table cell all end bare"
-  done
+  ./check-prose.sh "${docs[@]}"
 
   echo "== every t.sh example in the docs uses flags that subcommand actually accepts"
   # A documented command is a hand-written mirror of the parser, and mirrors drift. This one

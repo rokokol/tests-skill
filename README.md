@@ -2,7 +2,7 @@
 
 # tests skill
 
-**A green run that means something ⊂(‘ω’⊂ )))Σ≡=─༄༅༄༅༄༅༄༅༄༅**
+**A green run that means something ⊂(･ω･⊂ )))Σ≡=─༄༅༄༅༄༅༄༅༄༅**
 
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-6E56CF?style=flat)](https://agentskills.io)
 ![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat&logo=gnubash&logoColor=white)
