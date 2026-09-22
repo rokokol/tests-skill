@@ -164,6 +164,21 @@ check_lint() {
   [[ "$flake_systems" == *x86_64-linux* ]] ||
     fail "the flake does not offer a dev shell on x86_64-linux, which is what CI runs the gate on"
 
+  echo "== the Nix this repository holds is formatted"
+  # A `formatter` output nothing runs is a declaration, not a rule: this flake declared
+  # nixfmt-tree while the gate had never asked whether a file obeyed it. nixfmt rather than
+  # `nix fmt`, because the second needs the flake and this is the binary the wrapper calls
+  # find rather than a glob: a .nix file in a subdirectory is as much this repository's as
+  # flake.nix, and a glob that misses one reads as a clean run.
+  # find rather than git ls-files, because this gate runs on a copy of the tree that carries
+  # no .git, and there an empty list would read the same way. Measured: git ls-files made
+  # the untouched copy fail, and every "able to fail" proof below rests on it passing
+  local nixfiles=()
+  while IFS= read -r f; do nixfiles+=("$f"); done < <(find . -name '*.nix' -type f -not -path '*/.git/*')
+  ((${#nixfiles[@]})) || fail "no .nix file is tracked here, yet the flake declares a formatter"
+  nixfmt --check "${nixfiles[@]}" ||
+    fail "a .nix file here is not what nixfmt writes — run nix fmt"
+
   echo "== SKILL.md loads, every reference is reachable, every link and anchor resolves"
   # The skill gate from https://github.com/rokokol/skill-authoring-skill, vendored: the frontmatter
   # an agent loads the skill by, reachability as a real walk over links from SKILL.md, and every
