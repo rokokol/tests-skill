@@ -21,6 +21,12 @@ stderr, DOC:LINE: what, so an editor can jump to it
 A YAML frontmatter block is data rather than prose, and is skipped: its keys are not
 paragraphs, and two of them in a row are not a hard wrap
 
+Before it reads the documents it was given, it proves each rule on two documents of its
+own: one written to break every rule, where each finding is demanded by name, and one
+written to break none, which must be silent. A check that has never been red is a
+decoration, and this file travels to repositories that keep no fixture for it
+Environment: CHECK_PROSE_NESTED=1 skips that proof, and is how the proof runs this copy
+
 Nothing here reaches the network
 Exit 0 when every document keeps the rules, 1 with one line per finding, 2 on a usage
 error or a document that does not exist
@@ -55,6 +61,131 @@ done
 for file in "$@"; do
   [[ -f "$file" ]] || die "$file: no such file"
 done
+
+# Every rule is proved able to fail before a real document is read. This file travels to
+# repositories whose gate runs it and keeps no fixture of its own, so the proof travels
+# with it: a document written to break each rule must be reported for each rule by name,
+# and one written to break none must be silent. CHECK_PROSE_NESTED=1 is how the proof runs
+# this same copy without the proof running itself
+if [ -z "${CHECK_PROSE_NESTED:-}" ]; then
+  # Through the bash already running this, rather than by the shebang: a copy written by a
+  # tool — a gate planting a defect into one, an unpacked archive — may have no execute
+  # bit, and a permission denied would read as the first rule catching nothing
+  self=${BASH:-bash}
+  script=$0
+  case $script in */*) ;; *) script=./$script ;; esac
+  probe=$(mktemp -d "${TMPDIR:-/tmp}/check-prose.XXXXXX")
+  trap 'rm -rf "$probe"' EXIT
+  cat >"$probe/bad.md" <<'BAD'
+# A document breaking every rule this script knows
+
+This paragraph ends with a full stop.
+
+**A bold paragraph that still ends with one.**
+
+A remark, then a parenthesis that ends with one. (Like this.)
+
+Some `code at the end that ends with one.`
+
+This paragraph is hard-wrapped across
+two lines, which a one-word edit would reflow
+
+> [!NOTE] the keyword does not have its line to itself
+
+A paragraph carrying « on its own, since a pair on one line lets a live half cover a dead one
+
+A paragraph carrying » on its own
+
+A paragraph carrying “ on its own
+
+A paragraph carrying ” on its own
+
+A paragraph carrying ‘ on its own
+
+A paragraph carrying ’ on its own
+
+## License
+
+MIT
+BAD
+  # Every shape here was a false positive at some point: an ordered list read as a
+  # paragraph broken in two, a frontmatter read as two paragraphs in a row, a title
+  # naming the contributing skill, a heading that contains one of the words rather than
+  # being it, and a code span holding the characters the rules forbid
+  cat >"$probe/quiet.md" <<'QUIET'
+---
+name: a-document
+description: "A frontmatter is data. Its keys are not paragraphs, two in a row are not a hard wrap, and a sentence in a field ends the way a sentence does."
+---
+
+# A document breaking none of them, titled like the contributing skill
+
+1. A numbered list item, which is a list item and not a paragraph
+2. A second one right after it, which is not a hard wrap
+
+## Before contributing to someone else's project
+
+A heading that is the word is a second copy of a file that already exists; one that contains it is a section about the topic
+
+## What goes to git and the changelog
+
+A rule has to be able to show the character it forbids, so a code span holding `«one»`, `“another”` or `‘a third’` is naming a character rather than quoting with it
+
+> [!NOTE]
+> An admonition with the keyword alone on its line, the way GitHub wants it
+
+```sh
+# Inside a fence, a sentence may end with a full stop.
+echo "and a hard wrap
+across two lines is code, not prose."
+```
+
+    An indented block is code too.
+    Two lines of it.
+
+Text after a fence, on one line, ending bare
+QUIET
+  probe_out=$(CHECK_PROSE_NESTED=1 "$self" "$script" "$probe/bad.md" 2>&1 || true)
+  for probe_want in \
+    'ends with a full stop' \
+    'hard-wrapped paragraph' \
+    'admonition keyword' \
+    'typographic quotation mark' \
+    'has its own file'; do
+    case $probe_out in
+      *"$probe_want"*) ;;
+      *)
+        printf 'check-prose: the rule reporting "%s" caught nothing on a document written to break it\n' \
+          "$probe_want" >&2
+        exit 1
+        ;;
+    esac
+  done
+  # One message covers six characters, so a live one would cover for a dead one. Each gets
+  # a paragraph to itself — a pair sharing a line lets its second half answer for the
+  # first — and all six are demanded
+  probe_quotes=$(printf '%s\n' "$probe_out" | grep -c 'typographic quotation mark' || true)
+  if [ "$probe_quotes" -ne 6 ]; then
+    printf 'check-prose: %s of the 6 typographic marks were caught — one of them reports nothing\n' \
+      "$probe_quotes" >&2
+    exit 1
+  fi
+  # The same shape again: reading the last character only would pass `.**`, `.)` and a
+  # stop inside closing backticks, so the document hides one behind each and all four
+  # full stops are demanded
+  probe_stops=$(printf '%s\n' "$probe_out" | grep -c 'ends with a full stop' || true)
+  if [ "$probe_stops" -ne 4 ]; then
+    printf 'check-prose: %s of the 4 full stops were caught — one hidden behind closing markup was not\n' \
+      "$probe_stops" >&2
+    exit 1
+  fi
+  if ! probe_out=$(CHECK_PROSE_NESTED=1 "$self" "$script" "$probe/quiet.md" 2>&1); then
+    printf 'check-prose: a document breaking no rule was reported on:\n%s\n' "$probe_out" >&2
+    exit 1
+  fi
+  rm -rf "$probe"
+  trap - EXIT
+fi
 
 fail=0
 file=''
