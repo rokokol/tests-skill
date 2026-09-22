@@ -1264,19 +1264,9 @@ BIG
   (cd "$fal" && exec "$BASH" "$HERE/t.sh" falsify --timeout "$orphan_deadline" -l "$work/logs" -- sh slow.sh) >"$work/interrupted.out" 2>&1 &
   falsify_pid=$!
   set +m
-  # The interrupt has to land while a mutant is on disk, or "the source was put back" is a
-  # claim about a file nothing had touched. `sleep 0.5` was that: falsify times the
-  # unbroken suite first, this one sleeps a second, and the marker naming the defect in
-  # flight was measured appearing at 1.10 s — idle and under sixteen concurrent runs alike.
-  # So the signal arrived during the baseline every time, and the two restore assertions
-  # below asserted that a pristine file was pristine. Waiting for the marker is the moment
-  # itself rather than a guess about how busy the machine is.
-  # Waited on the mutant itself and not on the marker that announces it. falsify names the
-  # defect in flight and *then* writes the file, so between those two lines there is a
-  # window where the marker is there and the source is still pristine. Small enough to be
-  # invisible here and in a container, wide enough for a macOS runner to land in it, which
-  # is where this was found. The precondition is a mutant on disk, so that is what is
-  # waited for; the marker is then checked as a claim about it.
+  # Waits for the mutant itself. Neither a fixed sleep nor the in-flight marker puts one
+  # there first, and PITFALLS.md measured what each of those cost under "The behaviour
+  # half survives heavy concurrency"
   waited=0
   while cmp -s "$fal/impl.sh" "$work/impl.sh.pristine" && kill -0 "$falsify_pid" 2>/dev/null && ((waited < 400)); do
     sleep 0.05
@@ -1485,7 +1475,7 @@ BIG
   status=0
   (cd "$prove_repo" && tsh prove -l "$work/logs" -- sh tests/suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 64)) || fail "prove accepted a commit with no fix to take away (got $status)"
-  # (e) a commit that is not HEAD is proven in a worktree, and the tree in front of you is left alone
+  # (e) a commit that is not HEAD is proven in a worktree, and the tree in front of you stays
   status=0
   prove_out=$(cd "$prove_repo" && tsh prove "$pinned" -l "$work/logs" -- sh tests/suite.sh 2>&1) || status=$?
   ((status == 0)) || fail "prove exited $status on an older commit whose test pins its fix (want 0):"$'\n'"$prove_out"
@@ -1752,9 +1742,9 @@ check_proofs() {
     [[ "$width" =~ ^[0-9]+$ ]] && ((width > 0)) || width=4
     local i=0 batch f k st
     local -a pids=() idx=()
-    # Job control, because a background job of a shell without it has SIGINT set to ignore,
-    # every process it spawns inherits that, and the copies assert what bisect-probe makes
-    # of a command killed by one: without this the probes report 0 and prove nothing
+    # Job control, because without it the probes below report 0 and prove nothing. What a
+    # background job does to SIGINT, and what the copies were asserting while it did, is in
+    # PITFALLS.md under "Backgrounding the gate needs `set -m`"
     set -m
     while ((i < rows)); do
       pids=()
@@ -1810,7 +1800,7 @@ check_proofs() {
   # whatever it breaks, and --any-file would excuse them together with every other entry;
   # and the bash4 pair is planted only where CHECK_BASH32 says the interpreter is the 3.2 a
   # macOS runner has, which a list has no way to say.
-  # shellcheck disable=SC2016  # every $ below is t.sh's own source text being matched, not an expansion
+  # shellcheck disable=SC2016  # every $ below is t.sh's own source being matched, not an expansion
   {
     # The escape goes back into flags_of's own program. Nothing about the answer changes —
     # gawk, mawk, busybox awk, goawk and the one-true-awk macOS ships all read `\ ` as a

@@ -88,7 +88,7 @@ markers_of() { # markers_of NAME
   grep -v '^[[:space:]]*#' "markers/$1.txt" | grep -v '^[[:space:]]*$' || :
 }
 
-# One situation: its output, its status, and what we claim about it. LIES means the tool
+# One situation: its output, its status, and what the table claims about it. LIES means the
 # exits 0 while the run answered about less than it appears to; HONEST means the status
 # already says so and a marker would be a second opinion; SILENT means it lies and prints
 # nothing a marker could match, which is a finding rather than a gap.
