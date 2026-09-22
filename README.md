@@ -30,14 +30,21 @@ This skill teaches an agent to keep the answer honest: a verdict no pipe can swa
 
 ## Install
 
-```sh
-git clone https://github.com/rokokol/tests-skill ~/Projects/tests
-ln -s ~/Projects/tests ~/.claude/skills/tests
+```bash
+npx skills add -g rokokol/tests-skill    # for you, everywhere
+npx skills add rokokol/tests-skill       # for the project you are standing in
 ```
 
-Or straight into the skills directory your agent reads:
+Claude Code also takes it as a plugin:
 
-```sh
+```
+/plugin marketplace add rokokol/skills
+/plugin install tests@rokokol-skills
+```
+
+or by hand — clone into whichever skills directory your agent reads:
+
+```bash
 git clone https://github.com/rokokol/tests-skill ~/.claude/skills/tests
 ```
 
