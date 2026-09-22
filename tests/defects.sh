@@ -381,27 +381,31 @@ plant 'lint/nofront' 'SKILL.md' write $'no frontmatter here\n' \
 
 plant 'lint/wrapped' 'README.md' append $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n' \
   'a hard-wrapped paragraph reflows on GitHub into lines nobody wrote, and the next one-word edit rewrites every line after it' \
-  expect caught 'hard-wraps a paragraph'
+  expect caught 'a hard-wrapped paragraph'
 
 plant 'lint/wrapped-reference' 'references/verdict.md' append $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n' \
   'a reference page drifts to hard wrapping, so every later edit to it produces a diff nobody can read' \
-  expect caught 'hard-wraps a paragraph'
+  expect caught 'a hard-wrapped paragraph'
 
 plant 'lint/wrapped-unlisted' 'PITFALLS.md' append $'\nThis paragraph is hard-wrapped across\ntwo lines, which GitHub would reflow\n' \
   'a document that no list in the gate names drifts to hard wrapping, because the rule only ever looked at the files somebody remembered to enumerate' \
-  expect caught 'hard-wraps a paragraph'
+  expect caught 'a hard-wrapped paragraph'
 
 plant 'lint/fullstop' 'references/verdict.md' append $'\n- a list item that ends with a full stop.\n' \
   'the house style goes one line at a time, and the documents stop looking like one voice' \
-  expect caught 'ends a line with a full stop'
+  expect caught 'ends with a full stop'
 
 plant 'lint/fullstop-bold' 'references/verdict.md' append $'\n**A bold rule that ends with a full stop.**\n' \
   'a full stop hides behind closing markup, where a rule that reads the last character of a line never sees it' \
-  expect caught 'ends a line with a full stop'
+  expect caught 'ends with a full stop'
 
 plant 'lint/fullstop-paren' 'references/verdict.md' append $'\nA remark. (A parenthesis that ends with a full stop.)\n' \
   'a full stop sits inside a closing parenthesis and passes the same rule for the same reason' \
-  expect caught 'ends a line with a full stop'
+  expect caught 'ends with a full stop'
+
+plant 'lint/quotes' 'references/verdict.md' append $'\nA paragraph quoting «something» the typographic way\n' \
+  'a typographic quotation mark reaches a reader who sees plain text, where it renders as a box or as nothing' \
+  expect caught 'typographic quotation mark'
 
 plant 'lint/bloated' 'SKILL.md' append $'\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another\n\n- one more rule, and another' \
   'SKILL.md grows into a reference, and an agent that needed the rules reads a page of prose instead' \
