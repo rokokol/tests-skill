@@ -36,6 +36,9 @@
             # `shfmt --to-json`, with jq flattening that tree into rows. It arrives before
             # the checker that needs it, so the cascade does not deliver a red run
             jq
+            # The same binary the formatter output wraps with treefmt. The gate calls it
+            # directly, because `nix fmt` needs the flake and a check should not
+            nixfmt
             shellcheck
             shfmt
           ];
