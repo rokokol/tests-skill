@@ -14,11 +14,12 @@ permissions:
   contents: read
 
 jobs:
-  # Two jobs rather than one matrix, because the halves need different things: the
-  # behaviour half runs under any bash with git and nothing else, while the lint half needs
-  # actionlint, shellcheck and shfmt from the flake. One run of falsify also knows one suite
-  # command, which is why the entries are named behaviour/… and lint/… and each job filters
-  # to its own
+  # Two jobs rather than one matrix, because the halves run different suite commands, and
+  # one run of falsify knows one command: the entries are named behaviour/… and lint/… and
+  # each job filters to its own. Both take the flake. The behaviour half needed bash and
+  # git alone until its own gate began calling check-sh.sh, which reads a script as a tree
+  # through shfmt and jq; without them the checker drops to --bash-only, and the three
+  # defects about a help that has fallen behind its parser survive unnoticed
   behaviour:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -32,11 +33,12 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
       # --worktree is not optional: the file these defects edit is the harness applying the
       # edit, and bash reads a script as it executes it. T_CHECK_NESTED=1 leaves out the
       # gate's own planted-defect pass, which would otherwise run inside every mutant
       - name: one shard of the behaviour half
-        run: ./t.sh falsify --worktree --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL" behaviour/ -- env T_CHECK_NESTED=1 ./check.sh behaviour
+        run: nix develop --no-write-lock-file -c ./t.sh falsify --worktree --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL" behaviour/ -- env T_CHECK_NESTED=1 ./check.sh behaviour
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
