@@ -63,6 +63,16 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 # on PATH — Homebrew's 5 on a Mac that has one.
 tsh() { "$BASH" "$HERE/t.sh" "$@"; }
 
+# Every call of the vendored drift checker goes through here, so the flag below is decided
+# once. --bash-only where CHECK_BASH32 says this is the macOS runner: check-sh.sh reads the
+# script it is given through shfmt and jq, and a macOS image carries neither. The flag
+# drops the tree-reading checks and keeps the rest, which is the half this proof is about
+checker() {
+  local tree_flag=()
+  [[ -z "${CHECK_BASH32:-}" ]] || tree_flag=(--bash-only)
+  "$BASH" "$HERE/check-sh.sh" ${tree_flag[@]+"${tree_flag[@]}"} "$@"
+}
+
 # With a template, because the BSD mktemp on macOS wants one
 work=$(mktemp -d "${TMPDIR:-/tmp}/check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -1554,18 +1564,18 @@ BIG
   # reference added later is covered by the glob rather than by a list kept here
   ref_docs=()
   for f in references/*.md references/ecosystems/*.md; do ref_docs+=(-m "$f"); done
-  CHECK_SH_NESTED=${T_CHECK_NESTED:-} "$BASH" ./check-sh.sh -n t.sh -e T_ -m SKILL.md -d README.md "${ref_docs[@]}" t.sh
+  CHECK_SH_NESTED=${T_CHECK_NESTED:-} checker -n t.sh -e T_ -m SKILL.md -d README.md "${ref_docs[@]}" t.sh
   # The drift checker runs against the upstream probe as well: it takes flags and answers
   # --help, so its help can fall behind its parser the same way t.sh's can
-  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n upstream.sh tests/upstream.sh
+  CHECK_SH_NESTED=1 checker -n upstream.sh tests/upstream.sh
   # The gate itself, for its parse and its bash 3.2 claim: it has no dispatcher and no
   # flags, so the checker reads it by the proxy alone
-  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n check.sh check.sh
+  CHECK_SH_NESTED=1 checker -n check.sh check.sh
   # The defect lists are sourced by falsify under whatever bash runs t.sh, and a heredoc
   # inside $( ) reads as other text under 3.2 with no error, so the lists carry the claim
   # and the proxy holds them to it; on a macOS runner the parse is the real 3.2 one
-  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n defects.sh tests/defects.sh
-  CHECK_SH_NESTED=1 "$BASH" ./check-sh.sh -n defects.sh templates/defects.sh
+  CHECK_SH_NESTED=1 checker -n defects.sh tests/defects.sh
+  CHECK_SH_NESTED=1 checker -n defects.sh templates/defects.sh
   codes_help=$(tsh help codes)
   codes=0
   while IFS= read -r code; do

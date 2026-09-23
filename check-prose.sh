@@ -195,6 +195,16 @@ report() { # report MESSAGE — about $file, at line $n
   fail=1
 }
 
+# Two patterns, held in variables rather than written where they are matched. A bracket class
+# containing a `)` has to escape it inside a case pattern, and tree-sitter's bash grammar
+# rejects the escape: the whole file then parses as one error, and a checker that reads
+# comments out of the tree reports this one as unreadable. Expanded unquoted below, which is
+# what makes them patterns rather than strings
+# shellcheck disable=SC2016 # the backticks are markdown, not command substitution
+TAIL_MARKUP='*[*_)`"]'
+# shellcheck disable=SC2016 # the same, and this one is a pair of them
+TWO_SPANS='*`*`*'
+
 for file in "$@"; do
   inside=0
   prev_prose=0
@@ -235,7 +245,8 @@ for file in "$@"; do
     # span closing a paragraph is still the last thing the reader sees, so a stop inside
     # it is a stop at the end of the paragraph
     nospan=$line
-    while case $nospan in *'`'*'`'*) true ;; *) false ;; esac do
+    # shellcheck disable=SC2053 # unquoted on purpose: quoted it would be a string, not a pattern
+    while [[ $nospan == $TWO_SPANS ]]; do
       rest=${nospan#*\`}
       nospan=${nospan%%\`*}${rest#*\`}
     done
@@ -249,7 +260,7 @@ for file in "$@"; do
       '# '*) ;;
       '#'*)
         title=$line
-        while case $title in '#'*) true ;; *) false ;; esac do
+        while [[ $title == '#'* ]]; do
           title=${title#\#}
         done
         title=${title# }
@@ -302,7 +313,8 @@ for file in "$@"; do
     # Rule 7: a paragraph, a list item and a table cell all end bare — read through the
     # markup that can close after the stop, since `.**`, `.)` and `` .` `` end on one too
     bare=$line
-    while case $bare in *[*_\)\`\"]) true ;; *) false ;; esac do
+    # shellcheck disable=SC2053 # unquoted on purpose: quoted it would be a string, not a pattern
+    while [[ $bare == $TAIL_MARKUP ]]; do
       bare=${bare%?}
     done
     case $bare in
