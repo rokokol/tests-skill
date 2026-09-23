@@ -64,14 +64,17 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 tsh() { "$BASH" "$HERE/t.sh" "$@"; }
 
 # Every call of the vendored drift checker goes through here, so the flag below is decided
-# once. --bash-only where CHECK_BASH32 says this is the macOS runner: check-sh.sh reads the
-# script it is given through shfmt and jq, and a macOS image carries neither. The flag
-# drops the tree-reading checks and keeps the rest, which is the half this proof is about
-checker() {
-  local tree_flag=()
-  [[ -z "${CHECK_BASH32:-}" ]] || tree_flag=(--bash-only)
-  "$BASH" "$HERE/check-sh.sh" ${tree_flag[@]+"${tree_flag[@]}"} "$@"
-}
+# once. check-sh.sh reads the script it is given as a tree, through shfmt and jq, and
+# --bash-only drops what needs the tree and keeps the rest. The question is whether the
+# tools are here, not which machine this is: a macOS image carries neither, and neither
+# does the runner of falsify.yml's behaviour half, which is documented to need bash and git
+# alone. Asked of the tools, both answers come out right, and a Mac with Homebrew's shfmt
+# gets the whole check
+tree_flag=()
+if ! command -v shfmt >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+  tree_flag=(--bash-only)
+fi
+checker() { "$BASH" "$HERE/check-sh.sh" ${tree_flag[@]+"${tree_flag[@]}"} "$@"; }
 
 # With a template, because the BSD mktemp on macOS wants one
 work=$(mktemp -d "${TMPDIR:-/tmp}/check.XXXXXX")
