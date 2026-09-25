@@ -2,6 +2,12 @@
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
+## 2026-09-25
+
+### Added
+
+- a core rule and `references/oracle.md`: a test pins the behaviour, not a copy of the code or its output. An expected value pasted from a run, a restated tuning constant or a message the code may reword is a second source of truth that fails on a harmless edit; assert the facts the behaviour promises, compare exactly only where the exact form is the contract, and prove it both ways — a broken behaviour goes red, a reworded output stays green. The reference carries examples in shell and Python
+
 ## 2026-09-23
 
 ### Changed
