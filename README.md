@@ -7,6 +7,7 @@
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-6E56CF?style=flat)](https://agentskills.io)
 ![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat&logo=gnubash&logoColor=white)
 ![Nix](https://img.shields.io/badge/Nix-flake-7EBAE4?style=flat&logo=nixos&logoColor=white)
+[![deviations](https://img.shields.io/badge/docs-deviations-555?style=flat)](DEVIATIONS.md)
 [![pitfalls](https://img.shields.io/badge/docs-pitfalls-555?style=flat)](PITFALLS.md)
 [![license](https://img.shields.io/badge/MIT-3DA639?style=flat)](LICENSE)
 [![ci](https://github.com/rokokol/tests-skill/actions/workflows/build.yml/badge.svg)](https://github.com/rokokol/tests-skill/actions/workflows/build.yml)
@@ -136,6 +137,7 @@ t.sh                  the harness; `t.sh help` lists every subcommand
 markers/              what a lying log says, as data: default.txt always, the rest via -m
 references/           one spec per rule, ecosystems/ per language, sources.md for the evidence
 templates/            defects.sh for falsify, t.conf for a repository's own policy, github/workflows/falsify.yml to run the list in CI
+DEVIATIONS.md         permanent choices the gate makes against the cheaper route
 PITFALLS.md           maintainer traps in this gate and its harness
 check.sh              the self-testing gate, in a lint half and a behaviour half
 check-skill.sh        the skill-authoring skill's gate for a skill repository, vendored
