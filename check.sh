@@ -1050,6 +1050,59 @@ ANDONE
   (cd "$fal" && tsh falsify -l "$work/logs" clamp -- sh suite.sh) >/dev/null 2>&1 || status=$?
   ((status == 0)) || fail "falsify exited $status on a list whose only defect is caught (want 0)"
 
+  echo "== every run the harness judges gets a bytecode cache of its own"
+  # Python trusts a cached .pyc while the source keeps its size and its mtime in whole
+  # seconds, and pytest's rewritten tests are cached the same way. A defect of the same
+  # length, planted and restored within one second, leaves the mutant's bytecode where the
+  # next run imports it: a caught defect reads as a survivor, the baseline goes red on
+  # clean code, or one defect is credited with the failure of the one before. A checkout
+  # between two commits in a bisect is the same edit. Python is not in this toolbox, so the
+  # contract is asserted directly: each run sees PYTHONPYCACHEPREFIX naming a directory that
+  # exists, is empty and is its own, and none outlives the run. The ambient prefix is set
+  # and holds a file, so a run that inherits it fails
+  cat >"$work/pycache-suite.sh" <<'PYC'
+#!/bin/sh
+seen="$1"
+shift
+p="${PYTHONPYCACHEPREFIX:-}"
+[ -n "$p" ] && [ -d "$p" ] || { echo "no bytecode cache of its own: '$p'"; exit 1; }
+case "$p" in /*) ;; *) echo "a bytecode cache a suite that changes directory would lose: $p"; exit 1 ;; esac
+[ -z "$(ls -A "$p")" ] || { echo "the bytecode cache already holds something: $p"; exit 1; }
+if grep -qxF "$p" "$seen"; then echo "a bytecode cache shared with an earlier run: $p"; exit 1; fi
+printf '%s\n' "$p" >>"$seen"
+: >"$p/written-by-this-run.pyc"
+exec "$@"
+PYC
+  # The build compiles into the same cache the run then imports from, so it is the one
+  # that sees it empty
+  cat >"$work/pycache-build.sh" <<'PYCBUILD'
+#!/bin/sh
+p="${PYTHONPYCACHEPREFIX:-}"
+case "$p" in /*) ;; *) echo "the build has no absolute bytecode cache: '$p'"; exit 1 ;; esac
+[ -d "$p" ] && [ -z "$(ls -A "$p")" ] || { echo "the build sees a bytecode cache that is not fresh: $p"; exit 1; }
+PYCBUILD
+  ambient="$work/ambient-pycache"
+  mkdir -p "$ambient"
+  : >"$ambient/stale.pyc"
+  seen="$work/pycache-seen"
+  : >"$seen"
+  status=0
+  pyc_out=$(cd "$fal" && PYTHONPYCACHEPREFIX="$ambient" tsh falsify -b "sh '$work/pycache-build.sh'" -l "$work/logs" --out "$work/fo-pycache" clamp -- sh "$work/pycache-suite.sh" "$seen" sh suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "falsify ran the suite without a fresh bytecode cache of its own (exit $status):"$'\n'"$pyc_out"$'\n'"$(cat "$work/fo-pycache/logs/baseline.log" 2>/dev/null)"
+  [[ "$(wc -l <"$seen")" -eq 2 ]] || fail "falsify recorded $(wc -l <"$seen") run(s) with a cache of their own, not the baseline and the one defect"
+  # The probe keeps its own log under T_LOGDIR or a relative .test-logs, so this is also
+  # the case where the cache has to be made absolute
+  probe_seen="$work/pycache-seen-probe"
+  : >"$probe_seen"
+  PYTHONPYCACHEPREFIX="$ambient" probe 0 "runs with a bytecode cache of its own" -- sh "$work/pycache-suite.sh" "$probe_seen" true
+  [[ -s "$probe_seen" ]] || fail "bisect-probe never reached the suite with a cache of its own"
+  status=0
+  (cd "$repo" && PYTHONPYCACHEPREFIX="$ambient" tsh bisect-probe -b "sh '$work/pycache-build.sh'" -- sh "$work/pycache-suite.sh" "$probe_seen" true) >"$work/probe-build.out" 2>&1 || status=$?
+  ((status == 0)) || fail "bisect-probe built the commit without a fresh cache of its own (exit $status):"$'\n'"$(grep 'bytecode cache' "$work/probe-build.out")"
+  while IFS= read -r dir; do
+    [[ ! -e "$dir" ]] || fail "a run's bytecode cache outlived the run: $dir"
+  done < <(cat "$seen" "$probe_seen")
+
   echo "== a defect the find text cannot express: appended, written whole, created, removed"
   # The four shapes a gate's planted defects actually take beside a replacement. Each has
   # to reach a verdict of its own, and the tree has to come back: a created file removed
@@ -1478,6 +1531,19 @@ BIG
   ((status == 0)) || fail "prove exited $status on a commit whose test pins its fix (want proven, 0):"$'\n'"$prove_out"
   grep -q '^proven:' <<<"$prove_out" || fail "prove did not say the commit was proven:"$'\n'"$prove_out"
   git -C "$prove_repo" diff --quiet || fail "prove left the fix taken away"
+  # Each of prove's runs gets a bytecode cache of its own too, and its log names are fixed,
+  # so one left behind by an interrupted prove is cleared rather than read
+  mkdir -p "$work/logs/prove-with-fix.log.pycache"
+  : >"$work/logs/prove-with-fix.log.pycache/left-by-an-interrupted-run.pyc"
+  prove_seen="$work/pycache-seen-prove"
+  : >"$prove_seen"
+  status=0
+  prove_out=$(cd "$prove_repo" && PYTHONPYCACHEPREFIX="$ambient" tsh prove -l "$work/logs" -- sh "$work/pycache-suite.sh" "$prove_seen" sh tests/suite.sh 2>&1) || status=$?
+  ((status == 0)) || fail "prove ran the suite without a fresh bytecode cache of its own (exit $status):"$'\n'"$prove_out"$'\n'"$(cat "$work/logs/prove-with-fix.log" 2>/dev/null)"
+  [[ "$(wc -l <"$prove_seen")" -eq 2 ]] || fail "prove recorded $(wc -l <"$prove_seen") run(s) with a cache of their own, not the one with the fix and the one without"
+  while IFS= read -r dir; do
+    [[ ! -e "$dir" ]] || fail "a prove run's bytecode cache outlived the run: $dir"
+  done <"$prove_seen"
   # (b) a test that does not pin its fix
   # shellcheck disable=SC2016  # the $1 belongs to the fixture's own sh
   printf 'triple() { echo $(( $1 * 3 )); }\n' >>"$prove_repo/impl.sh"

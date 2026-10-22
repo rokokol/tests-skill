@@ -63,6 +63,57 @@ defect 'behaviour/blind' 't.sh' \
   local -a ps=($?)' \
   expect caught 'for a command that exited 7'
 
+defect 'behaviour/pycache-shared' 't.sh' \
+  '  (PYTHONPYCACHEPREFIX="$PYCACHE" T_LOGFILE="$log" cmd_run -t 0' \
+  '  (T_LOGFILE="$log" cmd_run -t 0' \
+  'a Python mutant of the same length is imported from the bytecode a run before it left, so a caught defect is reported as a survivor and a clean baseline as already failing' \
+  expect caught 'without a fresh bytecode cache of its own'
+
+defect 'behaviour/pycache-probe' 't.sh' \
+  '  (PYTHONPYCACHEPREFIX="$PYCACHE" T_LOGFILE="$log" cmd_run -t 5' \
+  '  (T_LOGFILE="$log" cmd_run -t 5' \
+  'a bisect over two commits that differ by an edit of the same length runs the second against the first one'"'"'s bytecode, and names the wrong commit' \
+  expect caught 'runs with a bytecode cache of its own should be 0'
+
+defect 'behaviour/pycache-build' 't.sh' \
+  '    if ! PYTHONPYCACHEPREFIX="$PYCACHE" sh -c "$build" >"$log" 2>&1; then' \
+  '    if ! sh -c "$build" >"$log" 2>&1; then' \
+  'compileall as the build skips a mutant whose stale bytecode looks current, so an edit that breaks the syntax is credited as caught instead of reported unusable' \
+  expect caught 'without a fresh bytecode cache of its own'
+
+defect 'behaviour/pycache-probe-build' 't.sh' \
+  '    if ! PYTHONPYCACHEPREFIX="$PYCACHE" sh -c "$build" >&2; then' \
+  '    if ! sh -c "$build" >&2; then' \
+  'a bisect builds each commit against the bytecode of the one before, so a commit that does not compile is judged instead of skipped' \
+  expect caught 'built the commit without a fresh cache of its own'
+
+defect 'behaviour/pycache-kept' 't.sh' \
+  '  rm -rf -- "$PYCACHE"
+  if [[ -e "$log.timedout" ]]; then' \
+  '  if [[ -e "$log.timedout" ]]; then' \
+  'every judged run leaves a compiled copy of everything it imported beside its log, and a long falsification fills the disk' \
+  expect caught 'bytecode cache outlived the run'
+
+defect 'behaviour/pycache-probe-kept' 't.sh' \
+  '  rm -rf -- "$PYCACHE"
+  [[ ! -r "$log.verdict" ]] || kind=$(cat "$log.verdict")' \
+  '  [[ ! -r "$log.verdict" ]] || kind=$(cat "$log.verdict")' \
+  'every commit a bisect visits leaves a compiled copy of everything it imported in the log directory' \
+  expect caught 'bytecode cache outlived the run'
+
+defect 'behaviour/pycache-leftover' 't.sh' \
+  '  rm -rf -- "$PYCACHE"
+  mkdir -- "$PYCACHE"' \
+  '  mkdir -p -- "$PYCACHE"' \
+  'a prove interrupted once leaves its bytecode behind, and every later prove imports what the interrupted run compiled' \
+  expect caught 'prove ran the suite without a fresh bytecode cache of its own'
+
+defect 'behaviour/pycache-relative' 't.sh' \
+  '  PYCACHE="$(cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1").pycache" ||' \
+  '  PYCACHE="$1.pycache" ||' \
+  'a suite that changes directory compiles into a cache beside the source that nothing clears, and the next run of a bisect imports from it' \
+  expect caught 'runs with a bytecode cache of its own should be 0'
+
 defect 'behaviour/undocumented' 't.sh' \
   '  run) cmd_run "$@" ;;' \
   '  run) cmd_run "$@" ;;
