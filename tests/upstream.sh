@@ -518,9 +518,11 @@ CPP
 TEST(Clamp, NegativeBecomesZero) { EXPECT_EQ(0, 0); }
 CPP
   # `nix shell` puts gtest on PATH and nowhere a bare compiler looks, so its own store
-  # path is asked for and passed as -I and -L
-  gt=$(nix eval --raw nixpkgs#gtest.outPath 2>/dev/null || echo "")
-  gtd=$(nix eval --raw nixpkgs#gtest.dev.outPath 2>/dev/null || echo "$gt")
+  # path is asked for and passed as -I and -L. Building it is the part that matters:
+  # gtest keeps its headers in the `dev` output, and `nix shell` realizes only `out`,
+  # which leaves an evaluated `dev` path that is not in the store at all
+  gt=$(nix build --no-link --print-out-paths nixpkgs#gtest 2>/dev/null || echo "")
+  gtd=$(nix build --no-link --print-out-paths nixpkgs#gtest.dev 2>/dev/null || echo "$gt")
   run "$work/cpp.gtestbuild" sh -c "cd '$d' && nix shell nixpkgs#gcc -c g++ -std=c++17 -I'$gtd/include' src/gtest_demo.cpp -L'$gt/lib' -lgtest -lgtest_main -pthread -Wl,-rpath,'$gt/lib' -o gtest_demo"
   if [[ -x "$d/gtest_demo" ]]; then
     run "$work/cpp.nofilter" sh -c "cd '$d' && ./gtest_demo --gtest_filter=NoSuchTest"
