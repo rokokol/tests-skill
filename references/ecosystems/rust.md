@@ -42,6 +42,10 @@ Two invocations, not one: a build failure is a build failure, and folding it int
 
 Define a trait for the boundary — audio input, inference backend, clipboard, hotkeys — with the real implementation in the binary crate and a fake in the tests. Prefer this over `#[cfg(feature = ...)]`: feature flags multiply the build matrix, and the combination nobody tested is the one that ships. The real device then needs exactly one environment-layer test, run by hand before a release
 
+## `prove` and unit tests in the source file
+
+A Rust unit test lives in the `#[cfg(test)] mod tests` of the file it tests, and `prove` splits a commit by path, so that file counts as the fix. It warns `changes no test file`, takes the new tests out together with the fix, and reports `VACUOUS` for tests that do catch the fix going away. Prove such a commit by hand: in a worktree at the commit, undo only the fix's lines, keep the test module, and require `cargo test` to fail on the new tests. A test under `tests/` is split correctly, and `prove` works on it as usual
+
 ## For `tests/defects.sh`
 
 Always pass `-b 'cargo build --workspace --all-targets'`: without the build phase, an edit the compiler rejects is indistinguishable from a defect the tests caught, and the report would credit coverage that does not exist. Edits that stay compilable: a `?` replaced with `.unwrap_or_default()`, a `match` arm's body swapped for the other arm's value, a bound widened, a `filter(...)` dropped, a `saturating_sub` turned into `-`. Watch for edits that leave an unused variable or an unreachable pattern — with `-D warnings` those become `unusable`

@@ -2,6 +2,12 @@
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
+## 2026-10-29
+
+### Added
+
+- `references/ecosystems/rust.md` says how to prove a commit whose unit tests live in the `#[cfg(test)]` module of the file they test. `prove` splits a commit by path, so it takes those tests out with the fix and reports `VACUOUS` for tests that do catch the fix going away; such a commit is proven by hand
+
 ## 2026-10-26
 
 ### Fixed
